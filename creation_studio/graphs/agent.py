@@ -1,41 +1,23 @@
-from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
 
 from .state import AgentState
+from .nodes.chat import chat_node
+from .nodes.chat.tools import tools
 
 
-def build_agent(tools: list = None, model: str = "gpt-4.1-mini"):
-    """Build a basic ReAct agent graph.
-
-    Args:
-        tools: List of LangChain tools to bind to the agent.
-        model: OpenAI model name to use.
-
-    Returns:
-        Compiled LangGraph graph.
-    """
-    tools = tools or []
-    llm = ChatOpenAI(model=model)
-
-    if tools:
-        llm = llm.bind_tools(tools)
-
-    def call_model(state: AgentState):
-        response = llm.invoke(state["messages"])
-        return {"messages": [response]}
-
+def build_agent():
     graph = StateGraph(AgentState)
-    graph.add_node("agent", call_model)
+
+    graph.add_node("chat", chat_node)
 
     if tools:
-        tool_node = ToolNode(tools)
-        graph.add_node("tools", tool_node)
-        graph.add_edge(START, "agent")
-        graph.add_conditional_edges("agent", tools_condition)
-        graph.add_edge("tools", "agent")
+        graph.add_node("tools", ToolNode(tools))
+        graph.add_edge(START, "chat")
+        graph.add_conditional_edges("chat", tools_condition)
+        graph.add_edge("tools", "chat")
     else:
-        graph.add_edge(START, "agent")
-        graph.add_edge("agent", END)
+        graph.add_edge(START, "chat")
+        graph.add_edge("chat", END)
 
     return graph.compile()
