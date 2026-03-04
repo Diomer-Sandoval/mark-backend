@@ -36,6 +36,7 @@ ALLOWED_HOSTS = []
 
 INSTALLED_APPS = [
     'creation_studio',
+    'brand_dna_extractor',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
