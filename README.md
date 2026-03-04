@@ -10,10 +10,47 @@ Mark Backend is the core API and service layer for an AI-driven marketing agent.
 - **Automated Marketing:** Streamline workflows with AI-driven marketing capabilities.
 
 ## Project Structure
-- **`config/`**: Contains the core Django project settings, URL configurations, and WSGI/ASGI specifications.
-- **`creation_studio/`**: The main application responsible for asset creation. It handles the generation of images, videos, and carousels using AI.
-- **`manage.py`**: Django's command-line utility for administrative tasks.
-- **`pyproject.toml` & `poetry.lock`**: Configuration files for Poetry dependency management.
+
+```
+mark-backend/
+├── config/                         # Django project configuration
+│   ├── settings.py                 # Project settings
+│   ├── urls.py                     # Root URL routing
+│   ├── asgi.py
+│   └── wsgi.py
+│
+├── creation_studio/                # App: AI-powered asset creation
+│   ├── views.py                    # POST /api/chat/
+│   ├── graphs/
+│   │   ├── state.py                # AgentState (messages)
+│   │   ├── agent.py                # Graph: chat → tools → chat
+│   │   └── nodes/
+│   │       └── chat/
+│   │           ├── node.py         # LLM chat node
+│   │           ├── prompt.py       # System prompt
+│   │           └── tools.py        # Tool definitions
+│   └── migrations/
+│
+├── brand_dna_extractor/            # App: Extract brand DNA from brand input
+│   ├── views.py                    # POST /api/brand-dna/extract/
+│   ├── urls.py
+│   ├── graphs/
+│   │   ├── state.py                # BrandDNAState (messages, brand_input, brand_dna)
+│   │   ├── agent.py                # Graph: extractor → (tools →) extractor → formatter
+│   │   └── nodes/
+│   │       ├── extractor/
+│   │       │   ├── node.py         # LLM node: extracts raw brand attributes
+│   │       │   ├── prompt.py       # System prompt
+│   │       │   └── tools.py        # fetch_brand_website tool
+│   │       └── formatter/
+│   │           ├── node.py         # LLM node: structures output as JSON
+│   │           └── prompt.py       # System prompt
+│   └── migrations/
+│
+├── manage.py
+├── pyproject.toml
+└── poetry.lock
+```
 
 ## Requirements
 To run this project, you will need the following installed on your system:
