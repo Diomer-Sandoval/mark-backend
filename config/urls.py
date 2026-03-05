@@ -16,10 +16,10 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from creation_studio.views import chat
+from creation_studio.views import generate_content
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/chat/', chat),
+    path('api/content/generate/', generate_content),
     path('api/brand-dna/', include('brand_dna_extractor.urls')),
 ]

@@ -54,4 +54,9 @@ logs/
 aws_credentials.json
 
 # DynamoDB local
-.dynamodb/ 
+.dynamodb/
+
+# LangGraph local storage
+.langgraph_api/
+
+.claude

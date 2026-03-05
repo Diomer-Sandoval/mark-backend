@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "content_pipeline": "creation_studio.graphs.agent:build_agent"
+  },
+  "env": ".env"
+}

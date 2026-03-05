@@ -1,61 +1,85 @@
 # Mark Backend
 
 ## Overview
-Mark Backend is the core API and service layer for an AI-driven marketing agent. This system is designed to automate and enhance digital marketing workflows by generating creative assets such as images and video carousels. Additionally, it provides robust features for managing social media publications, tracking performance insights, and automating various other marketing tasks.
+Mark Backend is the core API and service layer for an AI-driven marketing agent. This system automates and enhances digital marketing workflows by generating creative assets such as images and video carousels, managing social media publications, tracking performance insights, and automating various marketing tasks.
 
 ## Features
-- **Asset Generation:** Automatically create high-quality images and video carousels for marketing campaigns.
-- **Post Management:** Schedule, publish, and seamlessly manage social media posts.
-- **Insights & Analytics:** Track performance metrics and gather actionable insights from your marketing efforts.
-- **Automated Marketing:** Streamline workflows with AI-driven marketing capabilities.
+- **Content Generation Pipeline:** AI-powered pipeline that researches trends, analyzes competitors, understands platform best practices, crafts strategy & copy, and generates images — all orchestrated via LangGraph.
+- **Brand DNA Extraction:** Extract and structure brand identity attributes from any brand input using LLM-powered analysis.
+- **Post Management:** Schedule, publish, and manage social media posts.
+- **Insights & Analytics:** Track performance metrics and gather actionable insights.
 
 ## Project Structure
 
 ```
 mark-backend/
-├── config/                         # Django project configuration
-│   ├── settings.py                 # Project settings
-│   ├── urls.py                     # Root URL routing
+├── config/                              # Django project configuration
+│   ├── settings.py
+│   ├── urls.py                          # Root URL routing
 │   ├── asgi.py
 │   └── wsgi.py
 │
-├── creation_studio/                # App: AI-powered asset creation
-│   ├── views.py                    # POST /api/chat/
+├── creation_studio/                     # App: AI content creation pipeline
+│   ├── views.py                         # POST /api/content/generate/
 │   ├── graphs/
-│   │   ├── state.py                # AgentState (messages)
-│   │   ├── agent.py                # Graph: chat → tools → chat
-│   │   └── nodes/
-│   │       └── chat/
-│   │           ├── node.py         # LLM chat node
-│   │           ├── prompt.py       # System prompt
-│   │           └── tools.py        # Tool definitions
+│   │   ├── state.py                     # ContentPipelineState
+│   │   ├── agent.py                     # LangGraph: research → strategy → image
+│   │   ├── nodes/
+│   │   │   ├── research_trends/         # Gemini: trending topics research
+│   │   │   ├── research_competitors/    # Gemini: competitor analysis
+│   │   │   ├── research_platform/       # Gemini: platform best practices
+│   │   │   ├── strategist_copywriter/   # Strategy & copy generation
+│   │   │   ├── prompt_engineer/         # Image prompt crafting
+│   │   │   └── generate_image/          # Gemini image generation + Cloudinary upload
+│   │   └── utils/
+│   │       ├── gemini_utils.py          # Gemini API client (text + image)
+│   │       └── cloudinary_utils.py      # Cloudinary upload helper
 │   └── migrations/
 │
-├── brand_dna_extractor/            # App: Extract brand DNA from brand input
-│   ├── views.py                    # POST /api/brand-dna/extract/
+├── brand_dna_extractor/                 # App: Extract brand DNA
+│   ├── views.py                         # POST /api/brand-dna/extract/
 │   ├── urls.py
 │   ├── graphs/
-│   │   ├── state.py                # BrandDNAState (messages, brand_input, brand_dna)
-│   │   ├── agent.py                # Graph: extractor → (tools →) extractor → formatter
+│   │   ├── state.py                     # BrandDNAState
+│   │   ├── agent.py                     # Graph: extractor → formatter
 │   │   └── nodes/
-│   │       ├── extractor/
-│   │       │   ├── node.py         # LLM node: extracts raw brand attributes
-│   │       │   ├── prompt.py       # System prompt
-│   │       │   └── tools.py        # fetch_brand_website tool
-│   │       └── formatter/
-│   │           ├── node.py         # LLM node: structures output as JSON
-│   │           └── prompt.py       # System prompt
+│   │       ├── extractor/               # LLM node: extract brand attributes
+│   │       └── formatter/               # LLM node: structure as JSON
 │   └── migrations/
 │
+├── langgraph.json                       # LangGraph deployment config
 ├── manage.py
 ├── pyproject.toml
 └── poetry.lock
 ```
 
+## Content Pipeline Architecture
+
+The creation studio uses a **fan-out / fan-in** LangGraph pipeline:
+
+```
+START
+  ├── research_trends ──────┐
+  ├── research_competitors ─┤  (parallel)
+  └── research_platform ────┘
+              │
+     strategist_copywriter
+              │
+       prompt_engineer
+              │
+       generate_image
+              │
+             END
+```
+
+1. **Research phase (parallel):** Three Gemini-powered nodes run simultaneously to gather trends, competitor insights, and platform-specific best practices.
+2. **Strategy & copy:** Synthesizes research into a content strategy and written copy.
+3. **Image prompt:** Crafts a detailed image generation prompt.
+4. **Image generation:** Generates the image via Gemini and uploads it to Cloudinary.
+
 ## Requirements
-To run this project, you will need the following installed on your system:
-- **Python:** version `>= 3.12`
-- **Poetry:** Used for dependency management. You can install it following the instructions [here](https://python-poetry.org/docs/).
+- **Python:** `>= 3.12`
+- **Poetry:** [Install here](https://python-poetry.org/docs/)
 
 ## Installation
 
@@ -66,15 +90,25 @@ To run this project, you will need the following installed on your system:
    ```
 
 2. **Install dependencies:**
-   Using Poetry, install the required packages (including Django):
    ```bash
    poetry install
    ```
 
+3. **Configure environment variables:**
+   ```bash
+   cp .env.example .env
+   ```
+   Fill in the required keys — see `.env.example` for the full list:
+   - `DJANGO_SECRET_KEY`
+   - `OPENAI_API_KEY`
+   - `GEMINI_API_KEY` / `GEMINI_IMAGE_API_KEY`
+   - `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET`
+   - `LANGCHAIN_API_KEY` (optional, for LangSmith tracing)
+   - `FIREBASE_SERVICE_ACCOUNT_JSON`
+
 ## Running the Project
 
 1. **Apply database migrations:**
-   Before running the application for the first time, make sure your database is set up:
    ```bash
    poetry run python manage.py migrate
    ```
@@ -83,5 +117,16 @@ To run this project, you will need the following installed on your system:
    ```bash
    poetry run python manage.py runserver
    ```
-   
-   The backend API will now be accessible at `http://127.0.0.1:8000/`.
+   The API will be available at `http://127.0.0.1:8000/`.
+
+3. **Run with LangGraph Studio (optional):**
+   ```bash
+   langgraph dev
+   ```
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/content/generate/` | Run the content creation pipeline |
+| `POST` | `/api/brand-dna/extract/` | Extract brand DNA from input |
