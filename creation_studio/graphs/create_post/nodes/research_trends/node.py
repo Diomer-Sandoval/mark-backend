@@ -1,5 +1,5 @@
 from ...state import ContentPipelineState
-from ...utils.gemini_utils import call_gemini, extract_text, parse_json
+from ....utils.gemini_utils import call_gemini, extract_text, parse_json
 from .prompt import build_prompt
 
 

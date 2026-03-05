@@ -2,8 +2,8 @@ import random
 import string
 
 from ...state import ContentPipelineState
-from ...utils.gemini_utils import generate_image
-from ...utils.cloudinary_utils import upload_image
+from ....utils.gemini_utils import generate_image
+from ....utils.cloudinary_utils import upload_image
 
 
 def _make_uuid(length: int = 17) -> str:

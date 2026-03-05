@@ -85,6 +85,55 @@ def generate_image(prompt: str) -> str | None:
     return None
 
 
+def edit_image(prompt: str, image_bytes: bytes) -> str | None:
+    """Edit an image with Gemini. Returns base64 PNG string or None."""
+    import base64
+
+    api_key = _resolve_key("GEMINI_IMAGE_API_KEY")
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"gemini-2.5-flash-image:generateContent?key={api_key}"
+    )
+    b64_image = base64.b64encode(image_bytes).decode()
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "inlineData": {
+                            "mimeType": "image/png",
+                            "data": b64_image,
+                        }
+                    },
+                    {"text": prompt},
+                ],
+            }
+        ],
+        "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
+    }
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json"}, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            response = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        print(f"Gemini edit_image API {e.code}: {body}")
+        return None
+
+    try:
+        parts = response["candidates"][0]["content"]["parts"]
+        for part in parts:
+            if "inlineData" in part:
+                return part["inlineData"]["data"]
+    except Exception:
+        pass
+    return None
+
+
 def parse_json(text: str) -> dict:
     try:
         match = re.search(r"```(?:json)?\s*\n?([\s\S]*?)\n?```", text)

@@ -7,10 +7,16 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from .graphs.agent import build_agent
-from .graphs.utils.firebase_utils import create_creation, create_generation, update_creation
+from .graphs.create_post import build_agent
+from .graphs.edit_image import build_edit_image_agent
+from .graphs.utils.firebase_utils import (
+    create_creation,
+    create_generation,
+    update_creation,
+)
 
 agent = build_agent()
+edit_image_agent = build_edit_image_agent()
 
 
 def _make_uuid(length: int = 17) -> str:
@@ -25,26 +31,35 @@ def generate_content(request):
     now = datetime.now(timezone.utc).isoformat()
     creation_uuid = _make_uuid()
 
-    create_creation(creation_uuid, {
-        "uuid": creation_uuid,
-        "creation_at": now,
-        "platforms": body.get("platform", []),
-        "post_type": body.get("post_type", ""),
-        "post_tone": body.get("post_tone", ""),
-        "identity": body.get("company", ""),
-        "status": "pending",
-        "update_at": now,
-    })
+    platforms = body.get("platforms", [])
+    platform = platforms[0] if platforms else "instagram"
+    brand_dna = body.get("brand_dna", {})
+    identity = brand_dna.get("identity", {})
+    tone = brand_dna.get("tone", {})
+
+    create_creation(
+        creation_uuid,
+        {
+            "uuid": creation_uuid,
+            "creation_at": now,
+            "platforms": platforms,
+            "post_type": body.get("post_type", ""),
+            "post_tone": body.get("post_tone", ""),
+            "identity": identity,
+            "status": "pending",
+            "update_at": now,
+        },
+    )
 
     initial_state = {
         "creation_uuid": creation_uuid,
-        "company": body.get("company", "Unknown"),
-        "topic": body.get("topic", ""),
-        "platform": body.get("platform", "Instagram"),
+        "company": identity.get("name", "Unknown"),
+        "topic": body.get("prompt", ""),
+        "platform": platform,
         "post_type": body.get("post_type", "Post"),
         "post_tone": body.get("post_tone", "General"),
-        "brand_tone": body.get("brand_tone", ""),
-        "brand_dna": body.get("brand_dna", {}),
+        "brand_tone": tone.get("voice", ""),
+        "brand_dna": brand_dna,
     }
 
     result = agent.invoke(initial_state)
@@ -54,20 +69,87 @@ def generate_content(request):
     done_at = datetime.now(timezone.utc).isoformat()
 
     if generation_uuid:
-        create_generation(creation_uuid, generation_uuid, {
-            "uuid": generation_uuid,
-            "creation_uuid": creation_uuid,
-            "img_url": image_url,
-            "prompt": result.get("image_prompt", ""),
-            "status": "done",
-            "create_at": done_at,
-        })
+        create_generation(
+            creation_uuid,
+            generation_uuid,
+            {
+                "uuid": generation_uuid,
+                "creation_uuid": creation_uuid,
+                "parent_uuid": creation_uuid,
+                "img_url": image_url,
+                "prompt": result.get("image_prompt", ""),
+                "status": "done",
+                "create_at": done_at,
+            },
+        )
+
+    update_creation(creation_uuid, {"status": "active", "update_at": done_at})
+
+    strategy_raw = result.get("strategy", "")
+    if "---" in strategy_raw:
+        strategy_part, copy_part = strategy_raw.split("---", 1)
+        strategy_part = strategy_part.strip()
+        copy_part = copy_part.strip()
+    else:
+        strategy_part = strategy_raw
+        copy_part = ""
+
+    return JsonResponse(
+        {
+            "uuid": creation_uuid,
+            "copy": copy_part,
+            "image_url": image_url,
+        }
+    )
+
+
+@csrf_exempt
+@require_POST
+def edit_image(request):
+    body = json.loads(request.body)
+    now = datetime.now(timezone.utc).isoformat()
+
+    creation_uuid = body.get("creation_uuid", "")
+    parent_uuid = body.get("uuid", "")
+    prompt = body.get("prompt", "")
+    img_url = body.get("img_url", "")
+
+    update_creation(creation_uuid, {
+        "status": "pending",
+        "feedback": prompt,
+        "update_at": now,
+    })
+
+    result = edit_image_agent.invoke({
+        "creation_uuid": creation_uuid,
+        "parent_uuid": parent_uuid,
+        "prompt": prompt,
+        "img_url": img_url,
+    })
+
+    result_url = result.get("result_url", "")
+    generation_uuid = result.get("generation_uuid", "")
+    done_at = datetime.now(timezone.utc).isoformat()
+
+    if generation_uuid:
+        create_generation(
+            creation_uuid,
+            generation_uuid,
+            {
+                "uuid": generation_uuid,
+                "creation_uuid": creation_uuid,
+                "parent_uuid": parent_uuid,
+                "img_url": result_url,
+                "prompt": prompt,
+                "status": "done",
+                "create_at": done_at,
+            },
+        )
 
     update_creation(creation_uuid, {"status": "active", "update_at": done_at})
 
     return JsonResponse({
-        "uuid": creation_uuid,
-        "strategy": result.get("strategy", ""),
-        "image_prompt": result.get("image_prompt", ""),
-        "image_url": image_url,
+        "status": "ok",
+        "message": "Image edited successfully",
+        "img_url": result_url,
     })

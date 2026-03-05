@@ -1,7 +1,8 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "content_pipeline": "creation_studio.graphs.agent:build_agent"
+    "content_pipeline": "creation_studio.graphs.create_post.agent:build_agent",
+    "edit_image": "creation_studio.graphs.edit_image.agent:build_edit_image_agent"
   },
   "env": ".env"
 }
