@@ -8,15 +8,15 @@ authors = [
 requires-python = ">=3.12,<4.0.0"
 dependencies = [
     "django (>=6.0.3,<7.0.0)",
-    "langgraph (>=1.0.10,<2.0.0)",
-    "langchain (>=1.2.10,<2.0.0)",
-    "python-dotenv (>=1.2.2,<2.0.0)",
-    "langchain-openai (>=1.1.10,<2.0.0)"
+    "psycopg2-binary (>=2.9.9,<3.0.0)",
+    "openai (>=1.0.0,<2.0.0)",
+    "numpy (>=1.26.0,<2.0.0)",
+    "pgvector (>=0.2.5,<1.0.0)",
+    "python-dotenv (>=1.0.0,<2.0.0)",
+    "djangorestframework (>=3.14.0,<4.0.0)",
+    "drf-spectacular (>=0.27.0,<1.0.0)"
 ]
 
-
-[tool.poetry]
-package-mode = false
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

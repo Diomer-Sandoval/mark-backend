@@ -55,3 +55,23 @@ aws_credentials.json
 
 # DynamoDB local
 .dynamodb/ 
+
+#for locally
+MARK_Template_vectorDB_rebuild.docx
+
+# Template assets (large files, can be regenerated)
+templates/
+*.jpg
+*.png
+*.jpeg
+*.json
+
+# Vector database files
+*.sqlite3
+*.db
+
+# Environment variables - NEVER commit these!
+.env
+.env.local
+.env.*
+!.env.example
