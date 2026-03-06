@@ -4,6 +4,8 @@ from typing_extensions import TypedDict
 class ContentPipelineState(TypedDict, total=False):
     # ── Input fields (mirror the request body) ───────────────────
     prompt: str          # user's content idea, e.g. "A chocolate bar with pepper"
+    current_copy: str    # existing copy to improve
+    copy_feedback: str   # instructions on what to change, e.g. "make it funnier"
     platforms: list      # e.g. ["instagram", "facebook"]
     post_type: str       # "post", "reel", "story", …
     post_tone: str       # "promotional", "educational", …

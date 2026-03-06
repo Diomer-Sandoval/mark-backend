@@ -36,3 +36,25 @@ def build_agent():
     graph.add_edge("generate_image", END)
 
     return graph.compile()
+
+
+def build_copy_agent():
+    """Same pipeline but stops after strategist_copywriter — no image generated."""
+    graph = StateGraph(ContentPipelineState)
+
+    graph.add_node("research_trends", research_trends_node)
+    graph.add_node("research_competitors", research_competitors_node)
+    graph.add_node("research_platform", research_platform_node)
+    graph.add_node("strategist_copywriter", strategist_copywriter_node)
+
+    graph.add_edge(START, "research_trends")
+    graph.add_edge(START, "research_competitors")
+    graph.add_edge(START, "research_platform")
+
+    graph.add_edge("research_trends", "strategist_copywriter")
+    graph.add_edge("research_competitors", "strategist_copywriter")
+    graph.add_edge("research_platform", "strategist_copywriter")
+
+    graph.add_edge("strategist_copywriter", END)
+
+    return graph.compile()

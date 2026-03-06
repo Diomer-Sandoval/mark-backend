@@ -35,12 +35,12 @@ Return ONLY a JSON object (no markdown, no explanation):
 
 Research this now:
 Platform: {platform}
-Niche/Topic: {topic}
+Niche/Topic: {prompt}
 
-Find the latest {platform} algorithm updates, engagement benchmarks for "{topic}", \
+Find the latest {platform} algorithm updates, engagement benchmarks for "{prompt}", \
 optimal posting strategies, and which metrics matter most.
 """
 
 
-def build_prompt(topic: str, platform: str) -> str:
-    return PROMPT_TEMPLATE.format(topic=topic, platform=platform)
+def build_prompt(prompt: str, platform: str) -> str:
+    return PROMPT_TEMPLATE.format(prompt=prompt, platform=platform)

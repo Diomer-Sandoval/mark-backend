@@ -1,6 +1,6 @@
 PROMPT_TEMPLATE = """\
 You are a social media trend analyst. Research what image-based content and styles \
-are performing best RIGHT NOW for a given topic and platform. Use your search \
+are performing best RIGHT NOW for a given prompt and platform. Use your search \
 capabilities for real current data.
 
 Focus on:
@@ -20,13 +20,13 @@ Return ONLY a JSON object (no markdown, no explanation):
 
 Research this now:
 Company: {company}
-Topic: {topic}
+Topic: {prompt}
 Platform: {platform}
 
 Find what's currently going viral and performing best on {platform} related to \
-"{topic}". Real examples, real engagement data, current design trends.
+"{prompt}". Real examples, real engagement data, current design trends.
 """
 
 
-def build_prompt(company: str, topic: str, platform: str) -> str:
-    return PROMPT_TEMPLATE.format(company=company, topic=topic, platform=platform)
+def build_prompt(company: str, prompt: str, platform: str) -> str:
+    return PROMPT_TEMPLATE.format(company=company, prompt=prompt, platform=platform)

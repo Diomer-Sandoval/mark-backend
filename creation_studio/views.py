@@ -7,7 +7,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from .graphs.create_post import build_agent
+from .graphs.create_post import build_agent, build_copy_agent
 from .graphs.edit_image import build_edit_image_agent
 from .graphs.utils.firebase_utils import (
     create_creation,
@@ -16,6 +16,7 @@ from .graphs.utils.firebase_utils import (
 )
 
 agent = build_agent()
+copy_agent = build_copy_agent()
 edit_image_agent = build_edit_image_agent()
 
 
@@ -106,6 +107,54 @@ def generate_content(request):
             "image_url": image_url,
         }
     )
+
+
+@csrf_exempt
+@require_POST
+def regenerate_copy(request):
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError as e:
+        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
+
+    creation_uuid = body.get("creation_uuid", "")
+    platforms = body.get("platforms", ["instagram"])
+    brand_dna = body.get("brand_dna", {})
+    identity = body.get("identity", {})
+    now = datetime.now(timezone.utc).isoformat()
+
+    update_creation(creation_uuid, {"status": "pending", "update_at": now})
+
+    initial_state = {
+        "creation_uuid": creation_uuid,
+        "prompt": body.get("prompt", ""),
+        "current_copy": body.get("current_copy", ""),
+        "copy_feedback": body.get("copy_feedback", ""),
+        "platforms": platforms,
+        "post_type": body.get("post_type", "post"),
+        "post_tone": body.get("post_tone", "promotional"),
+        "brand_dna": brand_dna,
+        "identity": identity,
+    }
+
+    try:
+        result = copy_agent.invoke(initial_state)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({"error": str(e)}, status=500)
+
+    strategy_raw = result.get("strategy", "")
+    if "---" in strategy_raw:
+        _, copy_part = strategy_raw.split("---", 1)
+        copy_part = copy_part.strip()
+    else:
+        copy_part = strategy_raw
+
+    done_at = datetime.now(timezone.utc).isoformat()
+    update_creation(creation_uuid, {"status": "active", "update_at": done_at})
+
+    return JsonResponse({"uuid": creation_uuid, "copy": copy_part})
 
 
 @csrf_exempt

@@ -32,7 +32,7 @@ STRATEGY:
 
 USER_PROMPT_TEMPLATE = """\
 ## User Request
-Topic: {topic}
+Prompt: {prompt}
 Platform: {platform}
 Post Type: {post_type}
 Post Tone: {post_tone}
@@ -51,7 +51,7 @@ Brand Tone: {brand_tone}
 ## Research — Platform Best Practices
 {research_platform}
 
-Synthesize the research into a content strategy, then generate the post copy.\
+Synthesize the research into a content strategy, then generate the post copy.{feedback_section}\
 """
 
 
@@ -61,9 +61,17 @@ def build_user_prompt(state: dict) -> str:
     brand_dna = state.get("brand_dna", {})
     identity = state.get("identity", {})
     brand_tone = brand_dna.get("tone", {}).get("voice", "")
+    current_copy = state.get("current_copy", "")
+    copy_feedback = state.get("copy_feedback", "")
+
+    feedback_section = ""
+    if current_copy:
+        feedback_section += f"\n\n## Current Copy\n{current_copy}"
+    if copy_feedback:
+        feedback_section += f"\n\n## Copy Feedback\n{copy_feedback}"
 
     return USER_PROMPT_TEMPLATE.format(
-        topic=state.get("prompt", ""),
+        prompt=state.get("prompt", ""),
         platform=", ".join(state.get("platforms", [])),
         post_type=state.get("post_type", ""),
         post_tone=state.get("post_tone", ""),
@@ -72,4 +80,5 @@ def build_user_prompt(state: dict) -> str:
         research_trends=json.dumps(state.get("research_trends", {})),
         research_competitors=json.dumps(state.get("research_competitors", {})),
         research_platform=json.dumps(state.get("research_platform", {})),
+        feedback_section=feedback_section,
     )
