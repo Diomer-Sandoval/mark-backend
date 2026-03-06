@@ -17,7 +17,7 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny, IsAdminUser
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from django.db import connection
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample, OpenApiResponse
 
@@ -34,6 +34,8 @@ from .serializers import (
 
 
 class HealthCheckView(APIView):
+    """Health check endpoint - public access."""
+    authentication_classes = []
     permission_classes = [AllowAny]
     
     @extend_schema(
@@ -67,6 +69,8 @@ class HealthCheckView(APIView):
 
 
 class TemplateListView(APIView):
+    """List all templates - public access."""
+    authentication_classes = []
     permission_classes = [AllowAny]
     
     @extend_schema(
@@ -128,6 +132,8 @@ class TemplateListView(APIView):
 
 
 class TemplateDetailView(APIView):
+    """Get template details - public access."""
+    authentication_classes = []
     permission_classes = [AllowAny]
     
     @extend_schema(
@@ -144,6 +150,8 @@ class TemplateDetailView(APIView):
 
 
 class TemplateSearchView(APIView):
+    """Search templates - public access."""
+    authentication_classes = []
     permission_classes = [AllowAny]
     
     @extend_schema(
@@ -212,6 +220,8 @@ class TemplateSearchView(APIView):
 
 
 class TemplateStatsView(APIView):
+    """Template statistics - public access."""
+    authentication_classes = []
     permission_classes = [AllowAny]
     
     @extend_schema(
@@ -250,6 +260,8 @@ class TemplateStatsView(APIView):
 
 
 class TemplateIngestView(APIView):
+    """Template ingestion - admin only."""
+    authentication_classes = []
     permission_classes = [IsAdminUser]
     
     @extend_schema(
@@ -301,6 +313,8 @@ class TemplateIngestView(APIView):
 
 
 class TemplateValidateView(APIView):
+    """Database validation - admin only."""
+    authentication_classes = []
     permission_classes = [IsAdminUser]
     
     @extend_schema(

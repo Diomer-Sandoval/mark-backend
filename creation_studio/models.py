@@ -1,15 +1,29 @@
 """
-Models for the Template Vector Database.
+Models for the Template Vector Database and Core Creation Studio.
 
-This module provides models for storing marketing templates with their embeddings
-for semantic similarity search. Supports both SQLite (development) and PostgreSQL
-with pgvector (production).
+This module provides models for:
+1. Template Vector Database - storing marketing templates with embeddings
+2. Core Creation Studio - Brands, Creations, Generations, Posts, etc.
+
+Supports both SQLite (development) and PostgreSQL with pgvector (production).
 """
 
 import json
 import numpy as np
 from django.db import models, connection
 from django.conf import settings
+
+# Import core models
+from .models_core import (
+    Brand,
+    BrandDNA,
+    Creation,
+    Generation,
+    Post,
+    PlatformInsight,
+    MediaFile,
+    generate_uuid,
+)
 
 
 class TemplateDocument(models.Model):
