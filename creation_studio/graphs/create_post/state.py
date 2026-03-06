@@ -2,14 +2,14 @@ from typing_extensions import TypedDict
 
 
 class ContentPipelineState(TypedDict, total=False):
-    # ── Input fields ──────────────────────────────────────────────
-    company: str
-    topic: str
-    platform: str
-    post_type: str
-    post_tone: str
-    brand_tone: str
-    brand_dna: dict
+    # ── Input fields (mirror the request body) ───────────────────
+    prompt: str          # user's content idea, e.g. "A chocolate bar with pepper"
+    platforms: list      # e.g. ["instagram", "facebook"]
+    post_type: str       # "post", "reel", "story", …
+    post_tone: str       # "promotional", "educational", …
+    brand_dna: dict      # {color_palette, typography, tone}
+    identity: dict       # {logo_url, name, slug, site_url}
+
     # ── Research results (written by the 3 parallel agents) ───────
     research_trends: dict
     research_competitors: dict

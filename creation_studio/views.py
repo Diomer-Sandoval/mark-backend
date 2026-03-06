@@ -27,15 +27,16 @@ def _make_uuid(length: int = 17) -> str:
 @csrf_exempt
 @require_POST
 def generate_content(request):
-    body = json.loads(request.body)
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError as e:
+        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
     now = datetime.now(timezone.utc).isoformat()
     creation_uuid = _make_uuid()
 
-    platforms = body.get("platforms", [])
-    platform = platforms[0] if platforms else "instagram"
+    platforms = body.get("platforms", ["instagram"])
     brand_dna = body.get("brand_dna", {})
-    identity = brand_dna.get("identity", {})
-    tone = brand_dna.get("tone", {})
+    identity = body.get("identity", {})
 
     create_creation(
         creation_uuid,
@@ -53,16 +54,20 @@ def generate_content(request):
 
     initial_state = {
         "creation_uuid": creation_uuid,
-        "company": identity.get("name", "Unknown"),
-        "topic": body.get("prompt", ""),
-        "platform": platform,
-        "post_type": body.get("post_type", "Post"),
-        "post_tone": body.get("post_tone", "General"),
-        "brand_tone": tone.get("voice", ""),
+        "prompt": body.get("prompt", ""),
+        "platforms": platforms,
+        "post_type": body.get("post_type", "post"),
+        "post_tone": body.get("post_tone", "promotional"),
         "brand_dna": brand_dna,
+        "identity": identity,
     }
 
-    result = agent.invoke(initial_state)
+    try:
+        result = agent.invoke(initial_state)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({"error": str(e)}, status=500)
 
     image_url = result.get("image_url", "")
     generation_uuid = result.get("generation_uuid", "")

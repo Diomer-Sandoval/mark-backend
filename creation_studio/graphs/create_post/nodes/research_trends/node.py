@@ -4,10 +4,12 @@ from .prompt import build_prompt
 
 
 def research_trends_node(state: ContentPipelineState) -> dict:
+    identity = state.get("identity", {})
+    platforms = state.get("platforms", ["instagram"])
     prompt = build_prompt(
-        state.get("company", "Unknown"),
-        state.get("topic", "general content"),
-        state.get("platform", "Instagram"),
+        identity.get("name", "Unknown"),
+        state.get("prompt", "general content"),
+        ", ".join(platforms),
     )
     raw = call_gemini(prompt)
     text = extract_text(raw)

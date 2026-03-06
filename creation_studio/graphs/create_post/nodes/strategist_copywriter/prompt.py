@@ -58,13 +58,17 @@ Synthesize the research into a content strategy, then generate the post copy.\
 def build_user_prompt(state: dict) -> str:
     import json
 
+    brand_dna = state.get("brand_dna", {})
+    identity = state.get("identity", {})
+    brand_tone = brand_dna.get("tone", {}).get("voice", "")
+
     return USER_PROMPT_TEMPLATE.format(
-        topic=state.get("topic", ""),
-        platform=state.get("platform", ""),
+        topic=state.get("prompt", ""),
+        platform=", ".join(state.get("platforms", [])),
         post_type=state.get("post_type", ""),
         post_tone=state.get("post_tone", ""),
-        brand_dna=json.dumps(state.get("brand_dna", {})),
-        brand_tone=state.get("brand_tone", ""),
+        brand_dna=json.dumps(brand_dna),
+        brand_tone=brand_tone,
         research_trends=json.dumps(state.get("research_trends", {})),
         research_competitors=json.dumps(state.get("research_competitors", {})),
         research_platform=json.dumps(state.get("research_platform", {})),
