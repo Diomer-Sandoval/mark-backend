@@ -1,13 +1,18 @@
 PROMPT_TEMPLATE = """\
-You are a social media trend analyst. Research what image-based content and styles \
-are performing best RIGHT NOW for a given prompt and platform. Use your search \
-capabilities for real current data.
+You are a social media trend analyst. Your job is to research what is performing best \
+RIGHT NOW on {platform} for a SINGLE specific content type: {post_type}.
 
-Focus on:
-- Top-performing content formats (carousel, infographic, reel, thread, single image, video)
-- Viral examples and why they worked
-- Current visual/design trends in this niche
-- Hooks and angles that drive engagement
+## CRITICAL CONSTRAINT
+The content type is locked to: {post_type}
+Do NOT mention, suggest, or analyze any other content type (no carousels if the type is \
+"post", no reels if the type is "carousel", etc.). Every insight must apply directly to \
+{post_type} on {platform}.
+
+Focus ONLY on {post_type} performance:
+- Visual styles and aesthetics that make {post_type} content go viral on {platform}
+- Hooks and opening lines that drive the most engagement for {post_type}
+- Design and layout patterns specific to {post_type}
+- Content angles and topics performing best for {post_type} in this niche
 
 Return ONLY a JSON object (no markdown, no explanation):
 {{
@@ -15,18 +20,18 @@ Return ONLY a JSON object (no markdown, no explanation):
   "visual_trends": {{"aesthetics": "...", "color_trends": "...", "typography": "...", "layout_patterns": "..."}},
   "top_hooks": [{{"hook": "...", "why_effective": "...", "example": "..."}}],
   "content_angles": ["angle 1", "angle 2", "angle 3"],
-  "top_pick": "Your #1 format recommendation and why"
+  "top_pick": "Your #1 insight for {post_type} on {platform} and why"
 }}
 
 Research this now:
 Company: {company}
 Topic: {prompt}
 Platform: {platform}
-
-Find what's currently going viral and performing best on {platform} related to \
-"{prompt}". Real examples, real engagement data, current design trends.
+Content Type: {post_type}
 """
 
 
-def build_prompt(company: str, prompt: str, platform: str) -> str:
-    return PROMPT_TEMPLATE.format(company=company, prompt=prompt, platform=platform)
+def build_prompt(company: str, prompt: str, platform: str, post_type: str = "post") -> str:
+    return PROMPT_TEMPLATE.format(
+        company=company, prompt=prompt, platform=platform, post_type=post_type
+    )

@@ -21,3 +21,15 @@ def upload_image(base64_data: str, folder: str, public_id: str) -> str:
         public_id=public_id,
     )
     return result["secure_url"]
+
+
+def upload_video(base64_data: str, folder: str, public_id: str) -> str:
+    """Upload a base64 MP4 to Cloudinary and return the secure_url."""
+    _config()
+    result = cloudinary.uploader.upload(
+        f"data:video/mp4;base64,{base64_data}",
+        folder=folder,
+        public_id=public_id,
+        resource_type="video",
+    )
+    return result["secure_url"]

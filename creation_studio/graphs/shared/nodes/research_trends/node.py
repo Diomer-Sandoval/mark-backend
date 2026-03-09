@@ -5,10 +5,17 @@ from .prompt import build_prompt
 def research_trends_node(state: dict) -> dict:
     identity = state.get("identity", {})
     platforms = state.get("platforms", ["instagram"])
+    post_type = (
+        state.get("post_type")
+        or state.get("video_tone") and "video"
+        or ("carousel" if state.get("num_slides") else None)
+        or "post"
+    )
     prompt = build_prompt(
         identity.get("name", "Unknown"),
         state.get("prompt", "general content"),
         ", ".join(platforms),
+        post_type=post_type,
     )
     raw = call_gemini(prompt)
     text = extract_text(raw)

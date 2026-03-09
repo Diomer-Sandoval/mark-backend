@@ -10,6 +10,7 @@ from django.views.decorators.http import require_POST
 from .graphs.create_post import build_agent, build_copy_agent
 from .graphs.edit_image import build_edit_image_agent
 from .graphs.create_carousel.agent import build_carousel_agent
+from .graphs.create_video.agent import build_video_agent
 from .graphs.utils.firebase_utils import (
     create_creation,
     create_generation,
@@ -20,6 +21,16 @@ agent = build_agent()
 copy_agent = build_copy_agent()
 edit_image_agent = build_edit_image_agent()
 carousel_agent = build_carousel_agent()
+video_agent = build_video_agent()
+
+_ASPECT_RATIO_MAP = {
+    "instagram reels": "9:16",
+    "tiktok": "9:16",
+    "youtube shorts": "9:16",
+    "linkedin": "16:9",
+    "facebook": "1:1",
+    "youtube": "16:9",
+}
 
 
 def _resolve_logo(body: dict) -> tuple[str, str]:
@@ -319,6 +330,102 @@ def generate_carousel(request):
         {
             "uuid": creation_uuid,
             "slides": completed_slides,
+            "caption": result.get("caption", ""),
+            "hashtags": result.get("hashtags", []),
+        }
+    )
+
+
+@csrf_exempt
+@require_POST
+def generate_video(request):
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError as e:
+        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
+
+    now = datetime.now(timezone.utc).isoformat()
+    creation_uuid = _make_uuid()
+
+    topic = body.get("topic", "")
+    platform = body.get("platform", "Instagram Reels")
+    video_tone = body.get("video_tone", "General")
+    num_scenes = max(3, min(6, int(body.get("num_scenes", 4))))
+    scene_duration = int(body.get("scene_duration", 6))
+    if scene_duration not in (5, 6, 8):
+        scene_duration = 6
+    brand_dna = body.get("brand_dna", {})
+    identity = body.get("identity", {})
+    aspect_ratio = _ASPECT_RATIO_MAP.get(platform.lower(), "9:16")
+
+    logo_base64, logo_mime_type = _resolve_logo(body)
+
+    create_creation(
+        creation_uuid,
+        {
+            "uuid": creation_uuid,
+            "creation_at": now,
+            "type": "video",
+            "platforms": [platform],
+            "num_scenes": num_scenes,
+            "scene_duration": scene_duration,
+            "aspect_ratio": aspect_ratio,
+            "video_tone": video_tone,
+            "identity": identity,
+            "status": "pending",
+            "update_at": now,
+        },
+    )
+
+    initial_state = {
+        "creation_uuid": creation_uuid,
+        "topic": topic,
+        "prompt": topic,
+        "platform": platform,
+        "platforms": [platform],
+        "video_tone": video_tone,
+        "num_scenes": num_scenes,
+        "scene_duration": scene_duration,
+        "aspect_ratio": aspect_ratio,
+        "brand_dna": brand_dna,
+        "identity": identity,
+        "logo_base64": logo_base64,
+        "logo_mime_type": logo_mime_type,
+    }
+
+    try:
+        result = video_agent.invoke(initial_state)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({"error": str(e)}, status=500)
+
+    completed_scenes = result.get("completed_scenes", [])
+    done_at = datetime.now(timezone.utc).isoformat()
+
+    for scene in completed_scenes:
+        generation_uuid = _make_uuid()
+        create_generation(
+            creation_uuid,
+            generation_uuid,
+            {
+                "uuid": generation_uuid,
+                "creation_uuid": creation_uuid,
+                "scene_number": scene.get("scene_number"),
+                "type": scene.get("type", "value"),
+                "video_url": scene.get("video_url", ""),
+                "filtered": scene.get("filtered", False),
+                "status": "done",
+                "create_at": done_at,
+            },
+        )
+
+    update_creation(creation_uuid, {"status": "active", "update_at": done_at})
+
+    return JsonResponse(
+        {
+            "uuid": creation_uuid,
+            "scenes": completed_scenes,
             "caption": result.get("caption", ""),
             "hashtags": result.get("hashtags", []),
         }
