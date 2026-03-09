@@ -14,8 +14,8 @@ from django.core.validators import URLValidator
 
 
 def generate_uuid():
-    """Generate a 17-character alphanumeric UUID."""
-    return uuid.uuid4().hex[:17]
+    """Generate a standard UUID4."""
+    return uuid.uuid4()
 
 
 class Brand(models.Model):
@@ -26,11 +26,10 @@ class Brand(models.Model):
     content creations, and performance analytics descend.
     """
     
-    # Primary key using 17-char alphanumeric format
-    uuid = models.CharField(
-        max_length=17, 
+    # Primary key using standard UUID4 format
+    uuid = models.UUIDField(
         primary_key=True, 
-        default=generate_uuid,
+        default=uuid.uuid4,
         editable=False
     )
     
@@ -96,10 +95,9 @@ class BrandDNA(models.Model):
     that feed the Strategist and Prompt Engineer nodes.
     """
     
-    uuid = models.CharField(
-        max_length=17,
+    uuid = models.UUIDField(
         primary_key=True,
-        default=generate_uuid,
+        default=uuid.uuid4,
         editable=False
     )
     
@@ -158,10 +156,9 @@ class Creation(models.Model):
         ('infographic', 'Infographic'),
     ]
     
-    uuid = models.CharField(
-        max_length=17,
+    uuid = models.UUIDField(
         primary_key=True,
-        default=generate_uuid,
+        default=uuid.uuid4,
         editable=False
     )
     
@@ -241,10 +238,9 @@ class Generation(models.Model):
         ('video', 'Video'),
     ]
     
-    uuid = models.CharField(
-        max_length=17,
+    uuid = models.UUIDField(
         primary_key=True,
-        default=generate_uuid,
+        default=uuid.uuid4,
         editable=False
     )
     
@@ -312,10 +308,9 @@ class Post(models.Model):
         ('infographic', 'Infographic'),
     ]
     
-    uuid = models.CharField(
-        max_length=17,
+    uuid = models.UUIDField(
         primary_key=True,
-        default=generate_uuid,
+        default=uuid.uuid4,
         editable=False
     )
     
@@ -409,10 +404,9 @@ class PlatformInsight(models.Model):
         ('youtube', 'YouTube'),
     ]
     
-    uuid = models.CharField(
-        max_length=17,
+    uuid = models.UUIDField(
         primary_key=True,
-        default=generate_uuid,
+        default=uuid.uuid4,
         editable=False
     )
     
@@ -468,10 +462,9 @@ class MediaFile(models.Model):
         ('video/mp4', 'MP4 Video'),
     ]
     
-    uuid = models.CharField(
-        max_length=17,
+    uuid = models.UUIDField(
         primary_key=True,
-        default=generate_uuid,
+        default=uuid.uuid4,
         editable=False
     )
     

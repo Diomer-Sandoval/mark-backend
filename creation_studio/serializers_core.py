@@ -29,7 +29,7 @@ class BrandDNASerializer(serializers.ModelSerializer):
         fields = [
             'uuid', 'primary_color', 'secondary_color', 'accent_color',
             'complementary_color', 'font_body_family', 'font_headings_family',
-            'voice_tone', 'keywords', 'description', 'raw_data',
+            'voice_tone', 'keywords', 'description',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
@@ -60,7 +60,7 @@ class BrandDNACreateSerializer(serializers.ModelSerializer):
         fields = [
             'primary_color', 'secondary_color', 'accent_color',
             'complementary_color', 'font_body_family', 'font_headings_family',
-            'voice_tone', 'keywords', 'description', 'raw_data'
+            'voice_tone', 'keywords', 'description'
         ]
 
 
