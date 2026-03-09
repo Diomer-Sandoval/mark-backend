@@ -5,9 +5,9 @@ All API endpoints are prefixed with /api/ in the main urls.py
 """
 
 from django.urls import path
-from . import views_api
-from . import views_core
-from . import views_test
+from .views import core as views_core
+from .views import templates as views_api
+from .views import dev as views_test
 
 urlpatterns = [
     # Development/Testing endpoints

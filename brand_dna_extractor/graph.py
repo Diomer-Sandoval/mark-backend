@@ -132,7 +132,7 @@ def persistence_node(state: BrandDNAState):
     title = llm_output.get("brand_name") or scraper_result.get("metadata", {}).get("title", "Unknown Brand")
     
     # We do imports here to avoid django initialization issues during module load
-    from creation_studio.models_core import Brand, BrandDNA
+    from creation_studio.models import Brand, BrandDNA
     from django.utils.text import slugify
     import uuid
     

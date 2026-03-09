@@ -128,8 +128,8 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'creation_studio.authentication.SIAJWTAuthentication',
-        'creation_studio.authentication.SIAAPIKeyAuthentication',
+        'creation_studio.auth.SIAJWTAuthentication',
+        'creation_studio.auth.SIAAPIKeyAuthentication',
     ],
 }
 
@@ -149,8 +149,8 @@ SIA_JWT_SECRET = os.getenv('SIA_JWT_SECRET', None)  # For local JWT validation (
 SPECTACULAR_SETTINGS = {
     # Custom authentication extensions
     'AUTHENTICATION_EXTENSIONS': [
-        'creation_studio.schema_extensions.SIAJWTAuthenticationExtension',
-        'creation_studio.schema_extensions.SIAAPIKeyAuthenticationExtension',
+        'creation_studio.auth.SIAJWTAuthenticationExtension',
+        'creation_studio.auth.SIAAPIKeyAuthenticationExtension',
     ],
     'TITLE': 'Mark Backend - Marketing Agent API',
     'DESCRIPTION': '''

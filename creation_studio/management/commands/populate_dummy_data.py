@@ -7,7 +7,7 @@ Usage:
 """
 
 from django.core.management.base import BaseCommand, CommandError
-from creation_studio.models_core import (
+from creation_studio.models import (
     Brand, BrandDNA, Creation, Generation,
     Post, PlatformInsight, MediaFile
 )
