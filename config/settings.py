@@ -25,6 +25,7 @@ ALLOWED_HOSTS = []
 
 INSTALLED_APPS = [
     'creation_studio',
+    'brand_dna_extractor',
     'rest_framework',
     'drf_spectacular',
     'django.contrib.admin',
@@ -116,36 +117,67 @@ STATIC_URL = 'static/'
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticated',
     ],
-    'DEFAULT_AUTHENTICATION_CLASSES': [],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'creation_studio.authentication.SIAJWTAuthentication',
+        'creation_studio.authentication.SIAAPIKeyAuthentication',
+    ],
 }
 
+# Development mode - set to True to allow testing without authentication
+# In production, this should always be False
+DEV_MODE_ALLOW_UNAUTHENTICATED = os.getenv('DEV_MODE_ALLOW_UNAUTHENTICATED', 'False').lower() == 'true'
+
+if DEV_MODE_ALLOW_UNAUTHENTICATED:
+    REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES'] = ['rest_framework.permissions.AllowAny']
+    REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'] = []
+
 # drf-spectacular Configuration (Swagger/OpenAPI)
+# SIA Solutions Integration Settings
+SIA_BASE_URL = os.getenv('SIA_BASE_URL', 'https://sia-backend-sbw7.onrender.com')  # Production SIA backend
+SIA_JWT_SECRET = os.getenv('SIA_JWT_SECRET', None)  # For local JWT validation (optional)
+
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'Mark Backend - Template Vector DB API',
+    # Custom authentication extensions
+    'AUTHENTICATION_EXTENSIONS': [
+        'creation_studio.schema_extensions.SIAJWTAuthenticationExtension',
+        'creation_studio.schema_extensions.SIAAPIKeyAuthenticationExtension',
+    ],
+    'TITLE': 'Mark Backend - Marketing Agent API',
     'DESCRIPTION': '''
     # Mark Backend API Documentation
     
-    This API provides semantic search capabilities for marketing templates using vector embeddings.
+    This API provides AI-powered marketing content creation and brand management capabilities.
     
     ## Key Features:
+    - **Brand Management**: Create and manage brands with DNA (colors, typography, voice)
+    - **Content Creation**: Manage creation projects and campaigns
+    - **AI Generation**: Track AI-generated assets (images, videos)
+    - **Social Media Posts**: Create and schedule posts with performance metrics
+    - **Analytics**: Platform insights and engagement tracking
     - **Template Search**: Find templates using natural language descriptions
-    - **Semantic Matching**: Uses OpenAI embeddings for similarity search
-    - **Template Management**: List, filter, and retrieve template details
     
     ## Authentication:
-    - Public endpoints: No authentication required
-    - Admin endpoints: Requires admin user credentials
+    This API supports two authentication methods:
     
-    ## Usage:
-    1. Use `/api/templates/search/` to find templates matching your content strategy
-    2. Use `/api/templates/{id}/` to get detailed template information
-    3. Use `/api/templates/stats/` to get database statistics
+    ### 1. JWT Bearer Token (for Web Users)
+    - Obtain JWT token from SIA Solutions OAuth endpoint
+    - Include in header: `Authorization: Bearer <token>`
     
-    ## Rate Limiting:
-    - Search endpoint: 100 requests/minute per IP
-    - Other endpoints: 1000 requests/minute per IP
+    ### 2. API Key (for Service-to-Service)
+    - Use for server-to-server communication
+    - Include in header: `X-API-Key: sia_<key>`
+    
+    ## Quick Start:
+    1. Generate a test token: POST `/api/auth/test-token/`
+    2. Use the token in the "Authorize" dialog
+    3. Test endpoints without restrictions
+    
+    ## Public Endpoints (No Auth Required):
+    - `GET /api/health/` - Health check
+    - `GET /api/templates/` - List templates
+    - `POST /api/templates/search/` - Search templates
     ''',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
@@ -156,7 +188,38 @@ SPECTACULAR_SETTINGS = {
         {'name': 'Templates', 'description': 'Template listing and retrieval operations'},
         {'name': 'Search', 'description': 'Semantic similarity search using vector embeddings'},
         {'name': 'Admin', 'description': 'Administrative operations (requires admin privileges)'},
+        {'name': 'Brands', 'description': 'Brand management and identity'},
+        {'name': 'Brand DNA', 'description': 'Brand DNA extraction and management'},
+        {'name': 'Creations', 'description': 'Content creation projects and campaigns'},
+        {'name': 'Generations', 'description': 'AI-generated visual assets'},
+        {'name': 'Posts', 'description': 'Social media posts and performance metrics'},
+        {'name': 'Platform Insights', 'description': 'Time-series analytics for brand growth'},
+        {'name': 'Media Files', 'description': 'Digital asset management'},
     ],
     'EXAMPLES_COMPONENT_SPLIT_REQUEST': True,
     'SORT_OPERATION_PARAMETERS': True,
+    
+    # Security schemes for Swagger UI
+    'SECURITY': [
+        {'SIA JWT Auth': []},
+        {'SIA API Key': []},
+    ],
+    
+    # Component security schemes
+    'APPEND_COMPONENTS': {
+        'securitySchemes': {
+            'SIA JWT Auth': {
+                'type': 'http',
+                'scheme': 'bearer',
+                'bearerFormat': 'JWT',
+                'description': 'SIA Solutions JWT token. Obtain from /api/auth/test-token/ or SIA login.'
+            },
+            'SIA API Key': {
+                'type': 'apiKey',
+                'in': 'header',
+                'name': 'X-API-Key',
+                'description': 'SIA Solutions API key for service authentication. Format: sia_<32-char>_<16-char>'
+            }
+        }
+    },
 }
