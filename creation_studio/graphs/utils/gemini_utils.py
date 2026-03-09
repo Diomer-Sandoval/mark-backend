@@ -134,6 +134,86 @@ def edit_image(prompt: str, image_bytes: bytes) -> str | None:
     return None
 
 
+def call_gemini_vision(prompt: str, image_base64: str, mime_type: str = "image/png") -> dict:
+    """Call Gemini with an image + text prompt; returns parsed JSON from the text response."""
+    api_key = _resolve_key()
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"gemini-2.5-flash:generateContent?key={api_key}"
+    )
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {"inlineData": {"mimeType": mime_type, "data": image_base64}},
+                    {"text": prompt},
+                ],
+            }
+        ],
+        "generationConfig": {"maxOutputTokens": 1024, "temperature": 0.1},
+    }
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json"}, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            response = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Gemini vision API {e.code}: {body}") from e
+    text = extract_text(response)
+    return parse_json(text)
+
+
+def generate_image_with_logo(
+    prompt: str,
+    logo_base64: str,
+    logo_mime_type: str = "image/png",
+    template_base64: str | None = None,
+) -> str | None:
+    """Generate a branded image using Gemini with logo injected as first part.
+
+    Returns base64 PNG string or None.
+    """
+    api_key = _resolve_key("GEMINI_IMAGE_API_KEY")
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"gemini-2.5-flash-image:generateContent?key={api_key}"
+    )
+    parts: list = []
+    if logo_base64:
+        parts.append({"inlineData": {"mimeType": logo_mime_type, "data": logo_base64}})
+    if template_base64:
+        parts.append({"inlineData": {"mimeType": "image/png", "data": template_base64}})
+    parts.append({"text": prompt})
+
+    payload = {
+        "contents": [{"role": "user", "parts": parts}],
+        "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
+    }
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json"}, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            response = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Gemini image-with-logo API {e.code}: {body}") from e
+
+    try:
+        parts_out = response["candidates"][0]["content"]["parts"]
+        for part in parts_out:
+            if "inlineData" in part:
+                return part["inlineData"]["data"]
+    except Exception:
+        pass
+    return None
+
+
 def parse_json(text: str) -> dict:
     try:
         match = re.search(r"```(?:json)?\s*\n?([\s\S]*?)\n?```", text)

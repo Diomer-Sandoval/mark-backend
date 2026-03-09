@@ -14,10 +14,15 @@ RULES:
 3. Use Brand DNA colors and visual identity as constraints.
 4. Use Research visual trends to inform the aesthetic direction.
 5. MERGE: Rewrite using style/quality keywords from examples + research trends.
-6. CRITICAL: Output ONLY the final prompt text. No quotes, introductions, or explanations.\
+6. CRITICAL: Output ONLY the final prompt text. No quotes, introductions, or explanations.
+7. CRITICAL: You MUST respect the "Post Type" field strictly. If the post type is "post", \
+generate a single standalone image — never a carousel, grid, multi-panel, or slide layout. \
+Only use multi-panel or slide layouts if the post type explicitly says "carousel".\
 """
 
 USER_PROMPT_TEMPLATE = """\
+Post Type: {post_type}
+
 User Concept & Strategy:
 {strategy}
 
@@ -41,6 +46,7 @@ def build_user_prompt(state: dict) -> str:
     research_platform = state.get("research_platform", {})
 
     return USER_PROMPT_TEMPLATE.format(
+        post_type=state.get("post_type", "post"),
         strategy=state.get("strategy", ""),
         brand_dna=json.dumps(state.get("brand_dna", {})),
         visual_trends=json.dumps(research_trends.get("visual_trends", "N/A")),

@@ -1,9 +1,9 @@
 from langgraph.graph import StateGraph, START, END
 
 from .state import ContentPipelineState
-from .nodes.research_trends import research_trends_node
-from .nodes.research_competitors import research_competitors_node
-from .nodes.research_platform import research_platform_node
+from creation_studio.graphs.shared.nodes.research_trends import research_trends_node
+from creation_studio.graphs.shared.nodes.research_competitors import research_competitors_node
+from creation_studio.graphs.shared.nodes.research_platform import research_platform_node
 from .nodes.strategist_copywriter import strategist_copywriter_node
 from .nodes.prompt_engineer import prompt_engineer_node
 from .nodes.generate_image import generate_image_node

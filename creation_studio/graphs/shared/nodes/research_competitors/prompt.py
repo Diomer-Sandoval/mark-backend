@@ -23,7 +23,7 @@ Return ONLY a JSON object (no markdown, no explanation):
 
 Research this now:
 Company: {company}
-Topic: {prompt}
+Prompt: {prompt}
 Platform: {platform}
 
 Find what {company}'s competitors and top brands are posting about "{prompt}" on \

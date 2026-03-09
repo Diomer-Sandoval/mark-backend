@@ -9,6 +9,7 @@ from django.views.decorators.http import require_POST
 
 from .graphs.create_post import build_agent, build_copy_agent
 from .graphs.edit_image import build_edit_image_agent
+from .graphs.create_carousel.agent import build_carousel_agent
 from .graphs.utils.firebase_utils import (
     create_creation,
     create_generation,
@@ -18,6 +19,32 @@ from .graphs.utils.firebase_utils import (
 agent = build_agent()
 copy_agent = build_copy_agent()
 edit_image_agent = build_edit_image_agent()
+carousel_agent = build_carousel_agent()
+
+
+def _resolve_logo(body: dict) -> tuple[str, str]:
+    """Return (logo_base64, logo_mime_type) from request body.
+
+    Priority: logo_base64 field → logo_url download → empty.
+    """
+    logo_b64 = body.get("logo_base64", "")
+    logo_mime = body.get("logo_mime_type", "image/png")
+    if logo_b64:
+        return logo_b64, logo_mime
+
+    logo_url = body.get("logo_url", "")
+    if logo_url:
+        try:
+            import urllib.request
+            import base64
+            with urllib.request.urlopen(logo_url, timeout=10) as resp:
+                raw = resp.read()
+                content_type = resp.headers.get("Content-Type", "image/png").split(";")[0]
+                return base64.b64encode(raw).decode(), content_type
+        except Exception:
+            pass
+
+    return "", "image/png"
 
 
 def _make_uuid(length: int = 17) -> str:
@@ -207,3 +234,92 @@ def edit_image(request):
         "message": "Image edited successfully",
         "img_url": result_url,
     })
+
+
+@csrf_exempt
+@require_POST
+def generate_carousel(request):
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError as e:
+        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
+
+    now = datetime.now(timezone.utc).isoformat()
+    creation_uuid = _make_uuid()
+
+    topic = body.get("topic", "")
+    platform = body.get("platform", "instagram")
+    post_tone = body.get("post_tone", "educational")
+    num_slides = max(5, min(10, int(body.get("num_slides", 7))))
+    brand_dna = body.get("brand_dna", {})
+    identity = body.get("identity", {})
+
+    logo_base64, logo_mime_type = _resolve_logo(body)
+
+    create_creation(
+        creation_uuid,
+        {
+            "uuid": creation_uuid,
+            "creation_at": now,
+            "type": "carousel",
+            "platforms": [platform],
+            "num_slides": num_slides,
+            "post_tone": post_tone,
+            "identity": identity,
+            "status": "pending",
+            "update_at": now,
+        },
+    )
+
+    initial_state = {
+        "creation_uuid": creation_uuid,
+        "topic": topic,
+        "prompt": topic,           # research nodes read "prompt"
+        "platform": platform,
+        "platforms": [platform],   # research nodes read "platforms"
+        "post_tone": post_tone,
+        "num_slides": num_slides,
+        "brand_dna": brand_dna,
+        "identity": identity,
+        "logo_base64": logo_base64,
+        "logo_mime_type": logo_mime_type,
+    }
+
+    try:
+        result = carousel_agent.invoke(initial_state)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({"error": str(e)}, status=500)
+
+    completed_slides = result.get("completed_slides", [])
+    done_at = datetime.now(timezone.utc).isoformat()
+
+    for slide in completed_slides:
+        generation_uuid = _make_uuid()
+        create_generation(
+            creation_uuid,
+            generation_uuid,
+            {
+                "uuid": generation_uuid,
+                "creation_uuid": creation_uuid,
+                "slide_index": slide.get("index"),
+                "img_url": slide.get("image_url", ""),
+                "headline": slide.get("headline", ""),
+                "qc_passed": slide.get("qc_passed", False),
+                "qc_attempts": slide.get("qc_attempts", 1),
+                "status": "done",
+                "create_at": done_at,
+            },
+        )
+
+    update_creation(creation_uuid, {"status": "active", "update_at": done_at})
+
+    return JsonResponse(
+        {
+            "uuid": creation_uuid,
+            "slides": completed_slides,
+            "caption": result.get("caption", ""),
+            "hashtags": result.get("hashtags", []),
+        }
+    )

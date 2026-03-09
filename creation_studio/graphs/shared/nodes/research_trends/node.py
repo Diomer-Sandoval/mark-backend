@@ -1,9 +1,8 @@
-from ...state import ContentPipelineState
-from ....utils.gemini_utils import call_gemini, extract_text, parse_json
+from creation_studio.graphs.utils.gemini_utils import call_gemini, extract_text, parse_json
 from .prompt import build_prompt
 
 
-def research_trends_node(state: ContentPipelineState) -> dict:
+def research_trends_node(state: dict) -> dict:
     identity = state.get("identity", {})
     platforms = state.get("platforms", ["instagram"])
     prompt = build_prompt(
