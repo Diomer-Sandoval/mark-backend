@@ -40,6 +40,8 @@ htmlcov/
 .env.development.local
 .env.test.local
 .env.production.local
+.env.*
+!.env.example
 
 # Logs
 *.log
@@ -60,3 +62,17 @@ aws_credentials.json
 .langgraph_api/
 
 .claude
+
+# for locally
+MARK_Template_vectorDB_rebuild.docx
+
+# Template assets (large files, can be regenerated)
+templates/
+*.jpg
+*.png
+*.jpeg
+*.json
+
+# Vector database files
+*.sqlite3
+*.db

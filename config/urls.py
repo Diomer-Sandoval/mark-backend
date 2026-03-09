@@ -17,6 +17,11 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import path, include
+from drf_spectacular.views import (
+    SpectacularAPIView,
+    SpectacularRedocView,
+    SpectacularSwaggerView,
+)
 from creation_studio.views import (
     generate_content,
     regenerate_copy,
@@ -27,12 +32,23 @@ from creation_studio.views import (
 )
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
-    path("api/content/generate-video/", generate_video),
-    path("api/content/generate-image/", generate_content),
-    path("api/content/edit-image/", edit_image),
-    path("api/content/edit-copy/", regenerate_copy),
-    path("api/content/generate-carousel/", generate_carousel),
-    path("api/content/edit-carousel-slide/", edit_carousel_slide),
-    path("api/brand-dna/", include("brand_dna_extractor.urls")),
+    # Django Admin
+    path('admin/', admin.site.urls),
+
+    # Content Generation Endpoints
+    path('api/content/generate-video/', generate_video),
+    path('api/content/generate-image/', generate_content),
+    path('api/content/edit-image/', edit_image),
+    path('api/content/edit-copy/', regenerate_copy),
+    path('api/content/generate-carousel/', generate_carousel),
+    path('api/content/edit-carousel-slide/', edit_carousel_slide),
+
+    # API Endpoints
+    path('api/', include('creation_studio.urls')),
+    path('api/', include('brand_dna_extractor.urls')),
+
+    # Swagger/OpenAPI Documentation
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 ]
