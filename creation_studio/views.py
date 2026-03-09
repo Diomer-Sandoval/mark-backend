@@ -10,7 +10,12 @@ from django.views.decorators.http import require_POST
 from .graphs.create_post import build_agent, build_copy_agent
 from .graphs.edit_image import build_edit_image_agent
 from .graphs.create_carousel.agent import build_carousel_agent
+from .graphs.create_carousel.nodes.generate_slides.slide_prompt_engineer import build_slide_prompt
+from .graphs.create_carousel.nodes.generate_slides.slide_qc_validator import validate_slide
+from .graphs.create_carousel.nodes.generate_slides.node import MAX_RETRIES
 from .graphs.create_video.agent import build_video_agent
+from .graphs.utils.gemini_utils import generate_image_with_logo
+from .graphs.utils.cloudinary_utils import upload_image
 from .graphs.utils.firebase_utils import (
     create_creation,
     create_generation,
@@ -36,14 +41,14 @@ _ASPECT_RATIO_MAP = {
 def _resolve_logo(body: dict) -> tuple[str, str]:
     """Return (logo_base64, logo_mime_type) from request body.
 
-    Priority: logo_base64 field → logo_url download → empty.
+    Priority: logo_base64 field → logo_url → identity.logo_url download → empty.
     """
     logo_b64 = body.get("logo_base64", "")
     logo_mime = body.get("logo_mime_type", "image/png")
     if logo_b64:
         return logo_b64, logo_mime
 
-    logo_url = body.get("logo_url", "")
+    logo_url = body.get("logo_url", "") or body.get("identity", {}).get("logo_url", "")
     if logo_url:
         try:
             import urllib.request
@@ -157,7 +162,7 @@ def regenerate_copy(request):
 
     creation_uuid = body.get("creation_uuid", "")
     platforms = body.get("platforms", ["instagram"])
-    brand_dna = body.get("brand_dna", {})
+    brand_dna = {k: v for k, v in body.get("brand_dna", {}).items() if k != "typography"}
     identity = body.get("identity", {})
     now = datetime.now(timezone.utc).isoformat()
 
@@ -334,6 +339,108 @@ def generate_carousel(request):
             "hashtags": result.get("hashtags", []),
         }
     )
+
+
+@csrf_exempt
+@require_POST
+def edit_carousel_slide(request):
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError as e:
+        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
+
+    creation_uuid = body.get("creation_uuid", "")
+    slide = body.get("slide", {})           # {index, headline, body, visual_description}
+    visual_theme = body.get("visual_theme", "")
+    brand_dna = body.get("brand_dna", {})
+    platform = body.get("platform", "instagram")
+    feedback = body.get("feedback", "")     # optional user feedback
+
+    logo_base64, logo_mime_type = _resolve_logo(body)
+
+    now = datetime.now(timezone.utc).isoformat()
+    update_creation(creation_uuid, {"status": "pending", "update_at": now})
+
+    slide_index = slide.get("index", 0)
+    expected_headline = slide.get("headline", "")
+    qc_feedback = feedback
+    image_url = ""
+    qc_passed = False
+    attempts = 0
+    last_error = ""
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        attempts = attempt
+        prompt = build_slide_prompt(
+            slide=slide,
+            brand_dna=brand_dna,
+            platform=platform,
+            visual_theme=visual_theme,
+            qc_feedback=qc_feedback,
+        )
+
+        try:
+            image_b64 = generate_image_with_logo(
+                prompt=prompt,
+                logo_base64=logo_base64,
+                logo_mime_type=logo_mime_type,
+            )
+        except Exception as e:
+            last_error = f"Image generation error: {e}"
+            image_b64 = None
+            continue
+
+        if not image_b64:
+            last_error = "Image generation returned no data"
+            continue
+
+        passed, issues = validate_slide(image_b64, expected_headline)
+        qc_passed = passed
+
+        if passed or attempt == MAX_RETRIES:
+            generation_uuid = _make_uuid()
+            folder = f"ia_generations/{creation_uuid}/carousel"
+            try:
+                image_url = upload_image(image_b64, folder, generation_uuid)
+            except Exception as e:
+                last_error = f"Cloudinary upload failed: {e}"
+                image_url = ""
+
+            if image_url and creation_uuid:
+                done_at = datetime.now(timezone.utc).isoformat()
+                create_generation(
+                    creation_uuid,
+                    generation_uuid,
+                    {
+                        "uuid": generation_uuid,
+                        "creation_uuid": creation_uuid,
+                        "slide_index": slide_index,
+                        "img_url": image_url,
+                        "headline": expected_headline,
+                        "qc_passed": qc_passed,
+                        "qc_attempts": attempts,
+                        "status": "done",
+                        "create_at": done_at,
+                    },
+                )
+            break
+        else:
+            qc_feedback = "\n".join(issues)
+
+    done_at = datetime.now(timezone.utc).isoformat()
+    update_creation(creation_uuid, {"status": "active", "update_at": done_at})
+
+    slide_result = {
+        "index": slide_index,
+        "headline": expected_headline,
+        "image_url": image_url,
+        "qc_passed": qc_passed,
+        "qc_attempts": attempts,
+    }
+    if not image_url and last_error:
+        slide_result["error"] = last_error
+
+    return JsonResponse({"uuid": creation_uuid, "slide": slide_result})
 
 
 @csrf_exempt

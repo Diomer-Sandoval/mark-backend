@@ -72,7 +72,7 @@ mark-backend/
 
 Two graph variants are available:
 
-**Full pipeline** — used by `/api/content/generate/`:
+**Full pipeline** — used by `/api/content/generate-image/`:
 ```
 START
   ├── research_trends ──────┐
@@ -88,7 +88,7 @@ START
              END
 ```
 
-**Copy-only pipeline** — used by `/api/content/regenerate-copy/`:
+**Copy-only pipeline** — used by `/api/content/edit-copy/`:
 ```
 START
   ├── research_trends ──────┐
@@ -157,16 +157,52 @@ The extractor can call `fetch_brand_website(url)` to scrape a brand's site befor
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/content/generate/` | Run the full post + image generation pipeline |
-| `POST` | `/api/content/regenerate-copy/` | Regenerate copy with optional feedback |
+| `POST` | `/api/content/generate-image/` | Run the full post + image generation pipeline |
+| `POST` | `/api/content/edit-copy/` | Regenerate copy with optional feedback |
 | `POST` | `/api/content/edit-image/` | Edit an existing image with a natural language prompt |
 | `POST` | `/api/content/generate-carousel/` | Generate a branded carousel |
+| `POST` | `/api/content/edit-carousel-slide/` | Regenerate a single carousel slide image |
 | `POST` | `/api/content/generate-video/` | Generate a video with Veo |
 | `POST` | `/api/brand-dna/extract/` | Extract brand DNA from text or URL |
 
+### Shared Objects
+
+These objects appear in multiple request bodies:
+
+```json
+// brand_dna
+{
+  "color_palette": {
+    "primary": "#FF0000",
+    "secondary": "#0D0D0D",
+    "accent": "#000000",
+    "complementary": ["#FF0000", "#000000", "#FFFFFF"]
+  },
+  "typography": {
+    "body": "Playfair Display",
+    "heading": "Montserrat"
+  },
+  "tone": {
+    "description": "Brand description...",
+    "keywords": ["sensorial", "artesanal", "educativo"],
+    "voice": "inspirational"
+  }
+}
+
+// identity — logo_url is used automatically to fetch the logo
+{
+  "logo_url": "https://example.com/logo.png",
+  "name": "Brand Name",
+  "slug": "brand-name",
+  "site_url": "https://example.com/"
+}
+```
+
+> **Logo resolution priority:** `logo_base64` → `logo_url` (top-level) → `identity.logo_url` → none.
+
 ### Request / Response Shapes
 
-#### `POST /api/content/generate/`
+#### `POST /api/content/generate-image/`
 ```json
 // Request
 {
@@ -174,8 +210,8 @@ The extractor can call `fetch_brand_website(url)` to scrape a brand's site befor
   "platforms": ["instagram", "facebook"],
   "post_type": "post",
   "post_tone": "promotional",
-  "brand_dna": { "color_palette": [...], "typography": {...}, "tone": "..." },
-  "identity": { "logo_url": "...", "name": "...", "slug": "...", "site_url": "..." }
+  "brand_dna": { ... },
+  "identity": { ... }
 }
 
 // Response
@@ -186,7 +222,7 @@ The extractor can call `fetch_brand_website(url)` to scrape a brand's site befor
 }
 ```
 
-#### `POST /api/content/regenerate-copy/`
+#### `POST /api/content/edit-copy/`
 ```json
 // Request
 {
@@ -197,8 +233,8 @@ The extractor can call `fetch_brand_website(url)` to scrape a brand's site befor
   "platforms": ["instagram"],
   "post_type": "post",
   "post_tone": "casual",
-  "brand_dna": {...},
-  "identity": {...}
+  "brand_dna": { ... },  // typography is stripped server-side (not needed for copy)
+  "identity": { ... }
 }
 
 // Response
@@ -221,7 +257,7 @@ The extractor can call `fetch_brand_website(url)` to scrape a brand's site befor
 // Response
 {
   "status": "ok",
-  "message": "...",
+  "message": "Image edited successfully",
   "img_url": "https://res.cloudinary.com/..."
 }
 ```
@@ -234,10 +270,8 @@ The extractor can call `fetch_brand_website(url)` to scrape a brand's site befor
   "platform": "instagram",
   "post_tone": "educational",
   "num_slides": 6,
-  "brand_dna": {...},
-  "identity": {...},
-  "logo_base64": "<base64>",    // optional
-  "logo_mime_type": "image/png" // optional
+  "brand_dna": { ... },
+  "identity": { ... }
 }
 
 // Response
@@ -249,12 +283,44 @@ The extractor can call `fetch_brand_website(url)` to scrape a brand's site befor
       "headline": "Sleep better tonight",
       "image_url": "https://res.cloudinary.com/...",
       "qc_passed": true,
-      "qc_attempts": 1,
-      "error": null
+      "qc_attempts": 1
     }
   ],
   "caption": "...",
   "hashtags": ["#sleep", "#wellness"]
+}
+```
+
+#### `POST /api/content/edit-carousel-slide/`
+Regenerates a single slide image without re-running the full pipeline.
+
+```json
+// Request
+{
+  "creation_uuid": "...",
+  "slide": {
+    "index": 2,
+    "headline": "Sleep 8 Hours Tonight",
+    "body": "Consistent sleep improves focus and mood.",
+    "visual_description": "Calm bedroom scene, soft blue tones"
+  },
+  "visual_theme": "<overall art direction from original carousel>",
+  "platform": "instagram",
+  "feedback": "Make the background darker",  // optional
+  "brand_dna": { ... },
+  "identity": { ... }
+}
+
+// Response
+{
+  "uuid": "<creation_uuid>",
+  "slide": {
+    "index": 2,
+    "headline": "Sleep 8 Hours Tonight",
+    "image_url": "https://res.cloudinary.com/...",
+    "qc_passed": true,
+    "qc_attempts": 1
+  }
 }
 ```
 
@@ -267,10 +333,29 @@ The extractor can call `fetch_brand_website(url)` to scrape a brand's site befor
   "video_tone": "Energetic",
   "num_scenes": 4,
   "scene_duration": 6,
-  "brand_dna": {...},
-  "identity": {...},
-  "logo_base64": "<base64>",    // optional
-  "logo_mime_type": "image/png" // optional
+  "brand_dna": {
+    "color_palette": {
+      "primary": "#FF0000",
+      "secondary": "#0D0D0D",
+      "accent": "#000000",
+      "complementary": ["#FF0000", "#000000", "#FFFFFF"]
+    },
+    "typography": {
+      "body": "Playfair Display",
+      "heading": "Montserrat"
+    },
+    "tone": {
+      "description": "Chocolate colombiano de origen único, elaborado artesanalmente para explorar los sabores de cada territorio y preservar tradiciones con un enfoque sostenible.",
+      "keywords": ["sensorial", "artesanal", "educativo"],
+      "voice": "inspirational"
+    }
+  },
+  "identity": {
+    "logo_url": "https://tapita.io/pb/pub/media/spb/usr/8739/wysiwyg/77362987294/Tibito-logo.png.webp",
+    "name": "Tibitó",
+    "slug": "tibitó",
+    "site_url": "https://tibito.co/"
+  }
 }
 
 // Response

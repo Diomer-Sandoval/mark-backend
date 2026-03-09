@@ -14,16 +14,25 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+
 from django.contrib import admin
 from django.urls import path, include
-from creation_studio.views import generate_content, regenerate_copy, edit_image, generate_carousel, generate_video
+from creation_studio.views import (
+    generate_content,
+    regenerate_copy,
+    edit_image,
+    generate_carousel,
+    edit_carousel_slide,
+    generate_video,
+)
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('api/content/generate/', generate_content),
-    path('api/content/regenerate-copy/', regenerate_copy),
-    path('api/content/edit-image/', edit_image),
-    path('api/content/generate-carousel/', generate_carousel),
-    path('api/content/generate-video/', generate_video),
-    path('api/brand-dna/', include('brand_dna_extractor.urls')),
+    path("admin/", admin.site.urls),
+    path("api/content/generate-video/", generate_video),
+    path("api/content/generate-image/", generate_content),
+    path("api/content/edit-image/", edit_image),
+    path("api/content/edit-copy/", regenerate_copy),
+    path("api/content/generate-carousel/", generate_carousel),
+    path("api/content/edit-carousel-slide/", edit_carousel_slide),
+    path("api/brand-dna/", include("brand_dna_extractor.urls")),
 ]
