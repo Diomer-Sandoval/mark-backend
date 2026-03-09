@@ -1,13 +1,15 @@
 # Mark Backend
 
 ## Overview
-Mark Backend is the core API and service layer for an AI-driven marketing agent. This system automates and enhances digital marketing workflows by generating creative assets such as images and video carousels, managing social media publications, tracking performance insights, and automating various marketing tasks.
+Mark Backend is the core API and service layer for an AI-driven marketing agent. It automates digital marketing workflows by generating creative assets (images, carousels, videos), managing brand identity, and orchestrating multi-step AI pipelines via LangGraph.
 
 ## Features
-- **Content Generation Pipeline:** AI-powered pipeline that researches trends, analyzes competitors, understands platform best practices, crafts strategy & copy, and generates images — all orchestrated via LangGraph.
+- **Post Generation:** Research-driven content pipeline that crafts strategy, copy, and images for social media posts.
+- **Carousel Generation:** Slide-by-slide carousel creation with per-slide QC validation and brand-aware image generation.
+- **Video Generation:** Scene-by-scene video creation via the Veo API with platform-specific aspect ratio selection.
+- **Image Editing:** Edit existing images with natural language prompts using Gemini (with OpenAI fallback).
+- **Copy Regeneration:** Refine existing copy with feedback without re-generating images.
 - **Brand DNA Extraction:** Extract and structure brand identity attributes from any brand input using LLM-powered analysis.
-- **Post Management:** Schedule, publish, and manage social media posts.
-- **Insights & Analytics:** Track performance metrics and gather actionable insights.
 
 ## Project Structure
 
@@ -19,21 +21,32 @@ mark-backend/
 │   ├── asgi.py
 │   └── wsgi.py
 │
-├── creation_studio/                     # App: AI content creation pipeline
-│   ├── views.py                         # POST /api/content/generate/
+├── creation_studio/                     # App: AI content creation pipelines
+│   ├── views.py                         # API endpoint handlers
 │   ├── graphs/
-│   │   ├── state.py                     # ContentPipelineState
-│   │   ├── agent.py                     # LangGraph: research → strategy → image
-│   │   ├── nodes/
-│   │   │   ├── research_trends/         # Gemini: trending topics research
-│   │   │   ├── research_competitors/    # Gemini: competitor analysis
-│   │   │   ├── research_platform/       # Gemini: platform best practices
-│   │   │   ├── strategist_copywriter/   # Strategy & copy generation
-│   │   │   ├── prompt_engineer/         # Image prompt crafting
-│   │   │   └── generate_image/          # Gemini image generation + Cloudinary upload
+│   │   ├── create_post/                 # Post + image generation pipeline
+│   │   │   ├── state.py                 # ContentPipelineState
+│   │   │   └── agent.py                 # build_agent() / build_copy_agent()
+│   │   ├── create_carousel/             # Carousel generation pipeline
+│   │   │   ├── state.py                 # CarouselPipelineState
+│   │   │   └── agent.py                 # build_carousel_agent()
+│   │   ├── create_video/                # Video generation pipeline
+│   │   │   ├── state.py                 # VideoPipelineState
+│   │   │   └── agent.py                 # build_video_agent()
+│   │   ├── edit_image/                  # Image editing pipeline
+│   │   │   ├── state.py                 # EditImageState
+│   │   │   └── agent.py                 # build_edit_image_agent()
+│   │   ├── shared/
+│   │   │   └── nodes/
+│   │   │       ├── research_trends/     # Gemini: trending topics research
+│   │   │       ├── research_competitors/# Gemini: competitor analysis
+│   │   │       └── research_platform/   # Gemini: platform best practices
 │   │   └── utils/
-│   │       ├── gemini_utils.py          # Gemini API client (text + image)
-│   │       └── cloudinary_utils.py      # Cloudinary upload helper
+│   │       ├── gemini_utils.py          # Gemini API client (text, vision, image gen)
+│   │       ├── openai_utils.py          # OpenAI image editing fallback
+│   │       ├── veo_utils.py             # Veo video generation client
+│   │       ├── cloudinary_utils.py      # Cloudinary upload helpers
+│   │       └── firebase_utils.py        # Firestore CRUD helpers
 │   └── migrations/
 │
 ├── brand_dna_extractor/                 # App: Extract brand DNA
@@ -41,10 +54,10 @@ mark-backend/
 │   ├── urls.py
 │   ├── graphs/
 │   │   ├── state.py                     # BrandDNAState
-│   │   ├── agent.py                     # Graph: extractor → formatter
+│   │   ├── agent.py                     # Graph: extractor → (tools) → formatter
 │   │   └── nodes/
-│   │       ├── extractor/               # LLM node: extract brand attributes
-│   │       └── formatter/               # LLM node: structure as JSON
+│   │       ├── extractor/               # GPT-4.1 mini: extract brand attributes
+│   │       └── formatter/               # GPT-4.1 mini: structure as JSON
 │   └── migrations/
 │
 ├── langgraph.json                       # LangGraph deployment config
@@ -53,10 +66,13 @@ mark-backend/
 └── poetry.lock
 ```
 
-## Content Pipeline Architecture
+## Pipeline Architectures
 
-The creation studio uses a **fan-out / fan-in** LangGraph pipeline:
+### Post Generation (`content_pipeline`)
 
+Two graph variants are available:
+
+**Full pipeline** — used by `/api/content/generate/`:
 ```
 START
   ├── research_trends ──────┐
@@ -72,10 +88,232 @@ START
              END
 ```
 
-1. **Research phase (parallel):** Three Gemini-powered nodes run simultaneously to gather trends, competitor insights, and platform-specific best practices.
-2. **Strategy & copy:** Synthesizes research into a content strategy and written copy.
-3. **Image prompt:** Crafts a detailed image generation prompt.
-4. **Image generation:** Generates the image via Gemini and uploads it to Cloudinary.
+**Copy-only pipeline** — used by `/api/content/regenerate-copy/`:
+```
+START
+  ├── research_trends ──────┐
+  ├── research_competitors ─┤  (parallel)
+  └── research_platform ────┘
+              │
+     strategist_copywriter
+              │
+             END
+```
+
+### Carousel Generation (`carousel_pipeline`)
+```
+START
+  ├── research_trends ──────┐
+  ├── research_competitors ─┤  (parallel)
+  └── research_platform ────┘
+              │
+   carousel_strategist
+              │
+   template_retriever
+              │
+    generate_slides   ← per-slide QC (up to 3 retries)
+              │
+             END
+```
+
+Each slide is validated by Gemini Vision: headline transcription similarity (≥0.85 Levenshtein), hex color presence, logo placement, and readability score (≥3/5).
+
+### Video Generation (`video_pipeline`)
+```
+START
+  ├── research_trends ──────┐
+  ├── research_competitors ─┤  (parallel)
+  └── research_platform ────┘
+              │
+    video_strategist
+              │
+   template_retriever
+              │
+    generate_scenes   ← Veo API, safety-filter aware
+              │
+             END
+```
+
+Platform → aspect ratio mapping: Instagram Reels / TikTok / YouTube Shorts → `9:16`, LinkedIn / YouTube → `16:9`, Facebook → `1:1`.
+
+### Image Editing (`edit_image`)
+```
+START → download_image → edit_with_gemini ──(success)──→ upload_and_save → END
+                                 │
+                           (gemini failed)
+                                 ↓
+                        edit_with_openai ──────────────→ upload_and_save → END
+```
+
+### Brand DNA Extraction
+```
+START → extractor ──(tool call)──→ tools → extractor (loop) → formatter → END
+                └──(no tool call)──────────────────────────→ formatter → END
+```
+
+The extractor can call `fetch_brand_website(url)` to scrape a brand's site before formatting.
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/content/generate/` | Run the full post + image generation pipeline |
+| `POST` | `/api/content/regenerate-copy/` | Regenerate copy with optional feedback |
+| `POST` | `/api/content/edit-image/` | Edit an existing image with a natural language prompt |
+| `POST` | `/api/content/generate-carousel/` | Generate a branded carousel |
+| `POST` | `/api/content/generate-video/` | Generate a video with Veo |
+| `POST` | `/api/brand-dna/extract/` | Extract brand DNA from text or URL |
+
+### Request / Response Shapes
+
+#### `POST /api/content/generate/`
+```json
+// Request
+{
+  "prompt": "Product launch for eco-friendly water bottle",
+  "platforms": ["instagram", "facebook"],
+  "post_type": "post",
+  "post_tone": "promotional",
+  "brand_dna": { "color_palette": [...], "typography": {...}, "tone": "..." },
+  "identity": { "logo_url": "...", "name": "...", "slug": "...", "site_url": "..." }
+}
+
+// Response
+{
+  "uuid": "<creation_uuid>",
+  "copy": "Generated copy text...",
+  "image_url": "https://res.cloudinary.com/..."
+}
+```
+
+#### `POST /api/content/regenerate-copy/`
+```json
+// Request
+{
+  "creation_uuid": "...",
+  "prompt": "...",
+  "current_copy": "...",
+  "copy_feedback": "make it funnier",
+  "platforms": ["instagram"],
+  "post_type": "post",
+  "post_tone": "casual",
+  "brand_dna": {...},
+  "identity": {...}
+}
+
+// Response
+{
+  "uuid": "<creation_uuid>",
+  "copy": "Updated copy text..."
+}
+```
+
+#### `POST /api/content/edit-image/`
+```json
+// Request
+{
+  "creation_uuid": "...",
+  "uuid": "<parent_generation_uuid>",
+  "prompt": "Change the background to a sunset",
+  "img_url": "https://res.cloudinary.com/..."
+}
+
+// Response
+{
+  "status": "ok",
+  "message": "...",
+  "img_url": "https://res.cloudinary.com/..."
+}
+```
+
+#### `POST /api/content/generate-carousel/`
+```json
+// Request
+{
+  "topic": "5 tips for healthy sleep",
+  "platform": "instagram",
+  "post_tone": "educational",
+  "num_slides": 6,
+  "brand_dna": {...},
+  "identity": {...},
+  "logo_base64": "<base64>",    // optional
+  "logo_mime_type": "image/png" // optional
+}
+
+// Response
+{
+  "uuid": "<creation_uuid>",
+  "slides": [
+    {
+      "index": 0,
+      "headline": "Sleep better tonight",
+      "image_url": "https://res.cloudinary.com/...",
+      "qc_passed": true,
+      "qc_attempts": 1,
+      "error": null
+    }
+  ],
+  "caption": "...",
+  "hashtags": ["#sleep", "#wellness"]
+}
+```
+
+#### `POST /api/content/generate-video/`
+```json
+// Request
+{
+  "topic": "Summer sale announcement",
+  "platform": "Instagram Reels",
+  "video_tone": "Energetic",
+  "num_scenes": 4,
+  "scene_duration": 6,
+  "brand_dna": {...},
+  "identity": {...},
+  "logo_base64": "<base64>",    // optional
+  "logo_mime_type": "image/png" // optional
+}
+
+// Response
+{
+  "uuid": "<creation_uuid>",
+  "scenes": [
+    {
+      "scene_number": 1,
+      "type": "hook",
+      "scene_description": "...",
+      "video_url": "https://res.cloudinary.com/...",
+      "filtered": false,
+      "filter_reason": null,
+      "error": null
+    }
+  ],
+  "caption": "...",
+  "hashtags": ["#summer", "#sale"]
+}
+```
+
+#### `POST /api/brand-dna/extract/`
+```json
+// Request
+{
+  "brand_input": "https://example.com or a brand description"
+}
+
+// Response
+{
+  "brand_dna": { ... }
+}
+```
+
+## Models Used
+
+| Provider | Model | Usage |
+|----------|-------|-------|
+| Google | `gemini-2.5-flash` | Research nodes, QC validation |
+| Google | `gemini-2.5-flash` (image) | Image generation & editing |
+| Google | `veo-3.0-generate-preview` | Video scene generation |
+| OpenAI | `gpt-4.1-mini` | Strategist, copywriter, prompt engineer, brand extractor |
+| OpenAI | `gpt-image-1` | Image editing fallback |
 
 ## Requirements
 - **Python:** `>= 3.12`
@@ -98,13 +336,13 @@ START
    ```bash
    cp .env.example .env
    ```
-   Fill in the required keys — see `.env.example` for the full list:
+   Fill in the required keys:
    - `DJANGO_SECRET_KEY`
    - `OPENAI_API_KEY`
    - `GEMINI_API_KEY` / `GEMINI_IMAGE_API_KEY`
    - `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET`
-   - `LANGCHAIN_API_KEY` (optional, for LangSmith tracing)
    - `FIREBASE_SERVICE_ACCOUNT_JSON`
+   - `LANGCHAIN_API_KEY` (optional, for LangSmith tracing)
 
 ## Running the Project
 
@@ -123,10 +361,3 @@ START
    ```bash
    langgraph dev
    ```
-
-## API Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/content/generate/` | Run the content creation pipeline |
-| `POST` | `/api/brand-dna/extract/` | Extract brand DNA from input |
