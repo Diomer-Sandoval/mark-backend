@@ -24,6 +24,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'corsheaders',
     'creation_studio',
     'brand_dna_extractor',
     'rest_framework',
@@ -38,6 +39,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -113,6 +115,12 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# CORS
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+]
+
 # Django REST Framework Configuration
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
@@ -147,9 +155,9 @@ SPECTACULAR_SETTINGS = {
     'TITLE': 'Mark Backend - Marketing Agent API',
     'DESCRIPTION': '''
     # Mark Backend API Documentation
-    
+
     This API provides AI-powered marketing content creation and brand management capabilities.
-    
+
     ## Key Features:
     - **Brand Management**: Create and manage brands with DNA (colors, typography, voice)
     - **Content Creation**: Manage creation projects and campaigns
@@ -157,23 +165,23 @@ SPECTACULAR_SETTINGS = {
     - **Social Media Posts**: Create and schedule posts with performance metrics
     - **Analytics**: Platform insights and engagement tracking
     - **Template Search**: Find templates using natural language descriptions
-    
+
     ## Authentication:
     This API supports two authentication methods:
-    
+
     ### 1. JWT Bearer Token (for Web Users)
     - Obtain JWT token from SIA Solutions OAuth endpoint
     - Include in header: `Authorization: Bearer <token>`
-    
+
     ### 2. API Key (for Service-to-Service)
     - Use for server-to-server communication
     - Include in header: `X-API-Key: sia_<key>`
-    
+
     ## Quick Start:
     1. Generate a test token: POST `/api/auth/test-token/`
     2. Use the token in the "Authorize" dialog
     3. Test endpoints without restrictions
-    
+
     ## Public Endpoints (No Auth Required):
     - `GET /api/health/` - Health check
     - `GET /api/templates/` - List templates
@@ -198,13 +206,13 @@ SPECTACULAR_SETTINGS = {
     ],
     'EXAMPLES_COMPONENT_SPLIT_REQUEST': True,
     'SORT_OPERATION_PARAMETERS': True,
-    
+
     # Security schemes for Swagger UI
     'SECURITY': [
         {'SIA JWT Auth': []},
         {'SIA API Key': []},
     ],
-    
+
     # Component security schemes
     'APPEND_COMPONENTS': {
         'securitySchemes': {

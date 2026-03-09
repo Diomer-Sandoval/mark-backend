@@ -14,6 +14,7 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+
 from django.contrib import admin
 from django.urls import path, include
 from drf_spectacular.views import (
@@ -21,20 +22,33 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
+from creation_studio.views import (
+    generate_content,
+    regenerate_copy,
+    edit_image,
+    generate_carousel,
+    edit_carousel_slide,
+    generate_video,
+)
 
 urlpatterns = [
     # Django Admin
     path('admin/', admin.site.urls),
-    
+
+    # Content Generation Endpoints
+    path('api/content/generate-video/', generate_video),
+    path('api/content/generate-image/', generate_content),
+    path('api/content/edit-image/', edit_image),
+    path('api/content/edit-copy/', regenerate_copy),
+    path('api/content/generate-carousel/', generate_carousel),
+    path('api/content/edit-carousel-slide/', edit_carousel_slide),
+
     # API Endpoints
     path('api/', include('creation_studio.urls')),
     path('api/', include('brand_dna_extractor.urls')),
-    
+
     # Swagger/OpenAPI Documentation
-    # Download OpenAPI schema
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
-    # Swagger UI (interactive documentation)
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
-    # ReDoc (alternative documentation)
     path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 ]

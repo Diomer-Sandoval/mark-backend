@@ -40,6 +40,8 @@ htmlcov/
 .env.development.local
 .env.test.local
 .env.production.local
+.env.*
+!.env.example
 
 # Logs
 *.log
@@ -54,9 +56,14 @@ logs/
 aws_credentials.json
 
 # DynamoDB local
-.dynamodb/ 
+.dynamodb/
 
-#for locally
+# LangGraph local storage
+.langgraph_api/
+
+.claude
+
+# for locally
 MARK_Template_vectorDB_rebuild.docx
 
 # Template assets (large files, can be regenerated)
@@ -69,9 +76,3 @@ templates/
 # Vector database files
 *.sqlite3
 *.db
-
-# Environment variables - NEVER commit these!
-.env
-.env.local
-.env.*
-!.env.example
