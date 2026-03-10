@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status, serializers
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse, inline_serializer
-from creation_studio.models_core import Brand
+from creation_studio.models.core import Brand
 from .services.meta_client import MetaInsightService
 import logging
 

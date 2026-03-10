@@ -2,7 +2,7 @@ import logging
 import requests
 from datetime import timedelta
 from django.utils.timezone import now
-from creation_studio.models_core import Brand, PlatformInsight, Post
+from creation_studio.models.core import Brand, PlatformInsight, Post
 from django.utils.dateparse import parse_datetime
 from .meta_auth import META_ACCESS_TOKEN, INSTAGRAM_BUSINESS_ACCOUNT_ID, FACEBOOK_PAGE_ID
 
