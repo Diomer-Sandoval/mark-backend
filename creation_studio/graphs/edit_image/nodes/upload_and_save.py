@@ -1,13 +1,7 @@
-import random
-import string
+import uuid as _uuid_lib
 
 from ..state import EditImageState
 from ...utils.cloudinary_utils import upload_image
-
-
-def _make_uuid(length: int = 17) -> str:
-    chars = string.ascii_letters + string.digits
-    return "".join(random.choices(chars, k=length))
 
 
 def upload_and_save_node(state: EditImageState) -> dict:
@@ -15,7 +9,7 @@ def upload_and_save_node(state: EditImageState) -> dict:
     if not edited_base64:
         return {"result_url": "", "generation_uuid": ""}
 
-    generation_uuid = _make_uuid()
+    generation_uuid = str(_uuid_lib.uuid4())
     creation_uuid = state.get("creation_uuid", "")
 
     result_url = upload_image(

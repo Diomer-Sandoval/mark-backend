@@ -1,6 +1,5 @@
 import json
-import random
-import string
+import uuid as _uuid_lib
 from datetime import datetime, timezone
 
 from django.http import JsonResponse
@@ -65,9 +64,8 @@ def _resolve_logo(body: dict) -> tuple[str, str]:
     return "", "image/png"
 
 
-def _make_uuid(length: int = 17) -> str:
-    chars = string.ascii_letters + string.digits
-    return "".join(random.choices(chars, k=length))
+def _make_uuid() -> str:
+    return str(_uuid_lib.uuid4())
 
 
 # ---------------------------------------------------------------------------

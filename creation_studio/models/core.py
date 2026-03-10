@@ -166,7 +166,9 @@ class Creation(models.Model):
         Brand,
         on_delete=models.CASCADE,
         related_name='creations',
-        db_column='brand_uuid'
+        db_column='brand_uuid',
+        null=True,
+        blank=True,
     )
 
     # SIA Solutions integration - track who created this
