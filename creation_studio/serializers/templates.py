@@ -5,13 +5,13 @@ Converts TemplateDocument model instances to/from JSON for API responses.
 """
 
 from rest_framework import serializers
-from .models import TemplateDocument
+from ..models import TemplateDocument
 
 
 class TemplateMetadataSerializer(serializers.Serializer):
     """
     Serializer for template metadata fields.
-    
+
     Extracts key fields from the metadata JSON for API responses.
     """
     id = serializers.CharField(source='metadata.id')
@@ -41,11 +41,11 @@ class TemplateMetadataSerializer(serializers.Serializer):
 class TemplateDocumentSerializer(serializers.ModelSerializer):
     """
     Full serializer for TemplateDocument model.
-    
+
     Includes all fields with metadata expanded.
     """
     metadata = TemplateMetadataSerializer(read_only=True)
-    
+
     class Meta:
         model = TemplateDocument
         fields = ['id', 'content', 'metadata', 'created_at', 'updated_at']
@@ -55,7 +55,7 @@ class TemplateDocumentSerializer(serializers.ModelSerializer):
 class TemplateListSerializer(serializers.ModelSerializer):
     """
     Lightweight serializer for template list views.
-    
+
     Only includes essential fields for listing.
     """
     id = serializers.CharField(source='metadata.id')
@@ -64,17 +64,17 @@ class TemplateListSerializer(serializers.ModelSerializer):
     design_style = serializers.CharField(source='metadata.design_style', default='')
     preview_image_url = serializers.CharField(source='metadata.preview_image_url', default='')
     preview_image_path = serializers.CharField(source='metadata.preview_image_path', default='')
-    
+
     class Meta:
         model = TemplateDocument
-        fields = ['id', 'title', 'template_type', 'design_style', 
+        fields = ['id', 'title', 'template_type', 'design_style',
                   'preview_image_url', 'preview_image_path', 'created_at']
 
 
 class TemplateSearchResultSerializer(serializers.Serializer):
     """
     Serializer for template search results.
-    
+
     Includes the template data and similarity score.
     Data structure: {'template': TemplateDocument, 'similarity': float}
     """
@@ -99,7 +99,7 @@ class TemplateSearchResultSerializer(serializers.Serializer):
 class TemplateSearchRequestSerializer(serializers.Serializer):
     """
     Serializer for template search request.
-    
+
     Validates incoming search queries.
     """
     query = serializers.CharField(

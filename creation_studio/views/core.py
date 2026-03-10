@@ -18,15 +18,15 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse, OpenApiExample
 
-from .models_core import (
+from ..models import (
     Brand, BrandDNA, Creation, Generation,
     Post, PlatformInsight, MediaFile
 )
-from .authentication import (
+from ..auth import (
     SIAJWTAuthentication, SIAAPIKeyAuthentication,
     get_current_user, can_access_mark
 )
-from .serializers_core import (
+from ..serializers import (
     # Brand
     BrandListSerializer, BrandDetailSerializer,
     BrandCreateSerializer, BrandUpdateSerializer,
@@ -70,7 +70,7 @@ class BrandListView(APIView):
     """List all brands or create a new brand."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         tags=['Brands'],
         summary='List All Brands',
@@ -102,27 +102,27 @@ class BrandListView(APIView):
     )
     def get(self, request):
         user = get_current_user(request)
-        
+
         # Filter by current user and tenant
         queryset = Brand.objects.all()
         if user and user.user_id != 'service':
             queryset = queryset.filter(user_id=user.user_id)
             if user.tenant_id:
                 queryset = queryset.filter(tenant_id=user.tenant_id)
-        
+
         # Filter by is_active
         is_active = request.query_params.get('is_active')
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active.lower() == 'true')
-        
+
         # Filter by industry
         industry = request.query_params.get('industry')
         if industry:
             queryset = queryset.filter(industry__icontains=industry)
-        
+
         serializer = BrandListSerializer(queryset, many=True)
         return Response(serializer.data)
-    
+
     @extend_schema(
         tags=['Brands'],
         summary='Create New Brand',
@@ -174,17 +174,17 @@ class BrandListView(APIView):
     )
     def post(self, request):
         user = get_current_user(request)
-        
+
         serializer = BrandCreateSerializer(data=request.data)
         if serializer.is_valid():
             brand = serializer.save()
-            
+
             # Associate with current user and tenant
             if user:
                 brand.user_id = user.user_id
                 brand.tenant_id = user.tenant_id
                 brand.save()
-            
+
             return Response(
                 BrandDetailSerializer(brand).data,
                 status=status.HTTP_201_CREATED
@@ -196,7 +196,7 @@ class BrandDetailView(APIView):
     """Retrieve, update or delete a brand."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     def _check_ownership(self, brand, user):
         """Check if user owns this brand or is super admin."""
         if user.role == 'super_admin':
@@ -206,7 +206,7 @@ class BrandDetailView(APIView):
         if user.tenant_id and brand.tenant_id == user.tenant_id:
             return True
         return False
-    
+
     @extend_schema(
         tags=['Brands'],
         summary='Get Brand Details',
@@ -216,16 +216,16 @@ class BrandDetailView(APIView):
     def get(self, request, uuid):
         user = get_current_user(request)
         brand = get_object_or_404(Brand, uuid=uuid)
-        
+
         if not self._check_ownership(brand, user):
             return Response(
                 {"error": "You do not have permission to view this brand."},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         serializer = BrandDetailSerializer(brand)
         return Response(serializer.data)
-    
+
     @extend_schema(
         tags=['Brands'],
         summary='Update Brand',
@@ -236,19 +236,19 @@ class BrandDetailView(APIView):
     def patch(self, request, uuid):
         user = get_current_user(request)
         brand = get_object_or_404(Brand, uuid=uuid)
-        
+
         if not self._check_ownership(brand, user):
             return Response(
                 {"error": "You do not have permission to update this brand."},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         serializer = BrandUpdateSerializer(brand, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response(BrandDetailSerializer(brand).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
     @extend_schema(
         tags=['Brands'],
         summary='Delete Brand',
@@ -258,13 +258,13 @@ class BrandDetailView(APIView):
     def delete(self, request, uuid):
         user = get_current_user(request)
         brand = get_object_or_404(Brand, uuid=uuid)
-        
+
         if not self._check_ownership(brand, user):
             return Response(
                 {"error": "You do not have permission to delete this brand."},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         brand.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -275,7 +275,7 @@ class BrandDNAListView(APIView):
     """List all Brand DNA records or create a new one."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         tags=['Brand DNA'],
         summary='List All Brand DNA',
@@ -286,7 +286,7 @@ class BrandDNAListView(APIView):
         queryset = BrandDNA.objects.all()
         serializer = BrandDNASerializer(queryset, many=True)
         return Response(serializer.data)
-    
+
     @extend_schema(
         tags=['Brand DNA'],
         summary='Create Brand DNA',
@@ -309,7 +309,7 @@ class BrandDNADetailView(APIView):
     """Retrieve, update or delete a Brand DNA record."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         tags=['Brand DNA'],
         summary='Get Brand DNA',
@@ -320,7 +320,7 @@ class BrandDNADetailView(APIView):
         dna = get_object_or_404(BrandDNA, uuid=uuid)
         serializer = BrandDNASerializer(dna)
         return Response(serializer.data)
-    
+
     @extend_schema(
         tags=['Brand DNA'],
         summary='Update Brand DNA',
@@ -335,7 +335,7 @@ class BrandDNADetailView(APIView):
             serializer.save()
             return Response(BrandDNASerializer(dna).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
     @extend_schema(
         tags=['Brand DNA'],
         summary='Delete Brand DNA',
@@ -352,7 +352,7 @@ class BrandDNAByBrandView(APIView):
     """Get or update Brand DNA for a specific brand."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         tags=['Brand DNA'],
         summary='Get Brand DNA by Brand',
@@ -368,7 +368,7 @@ class BrandDNAByBrandView(APIView):
             )
         serializer = BrandDNASerializer(brand.dna)
         return Response(serializer.data)
-    
+
     @extend_schema(
         tags=['Brand DNA'],
         summary='Update Brand DNA by Brand',
@@ -396,7 +396,7 @@ class CreationListView(APIView):
     """List all creations or create a new creation project."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         tags=['Creations'],
         summary='List All Creations',
@@ -432,29 +432,29 @@ class CreationListView(APIView):
     def get(self, request):
         user = get_current_user(request)
         queryset = Creation.objects.all()
-        
+
         # Filter by current user
         if user and user.user_id != 'service':
             queryset = queryset.filter(user_id=user.user_id)
-        
+
         # Filter by brand
         brand_uuid = request.query_params.get('brand_uuid')
         if brand_uuid:
             queryset = queryset.filter(brand__uuid=brand_uuid)
-        
+
         # Filter by status
         status_filter = request.query_params.get('status')
         if status_filter:
             queryset = queryset.filter(status=status_filter)
-        
+
         # Filter by post_type
         post_type = request.query_params.get('post_type')
         if post_type:
             queryset = queryset.filter(post_type=post_type)
-        
+
         serializer = CreationListSerializer(queryset, many=True)
         return Response(serializer.data)
-    
+
     @extend_schema(
         tags=['Creations'],
         summary='Create New Creation',
@@ -479,16 +479,16 @@ class CreationListView(APIView):
     )
     def post(self, request):
         user = get_current_user(request)
-        
+
         serializer = CreationCreateSerializer(data=request.data)
         if serializer.is_valid():
             creation = serializer.save()
-            
+
             # Associate with current user
             if user:
                 creation.user_id = user.user_id
                 creation.save()
-            
+
             return Response(
                 CreationDetailSerializer(creation).data,
                 status=status.HTTP_201_CREATED
@@ -500,7 +500,7 @@ class CreationDetailView(APIView):
     """Retrieve, update or delete a creation project."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         tags=['Creations'],
         summary='Get Creation Details',
@@ -511,7 +511,7 @@ class CreationDetailView(APIView):
         creation = get_object_or_404(Creation, uuid=uuid)
         serializer = CreationDetailSerializer(creation)
         return Response(serializer.data)
-    
+
     @extend_schema(
         tags=['Creations'],
         summary='Update Creation',
@@ -526,7 +526,7 @@ class CreationDetailView(APIView):
             serializer.save()
             return Response(CreationDetailSerializer(creation).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
     @extend_schema(
         tags=['Creations'],
         summary='Delete Creation',
@@ -545,7 +545,7 @@ class GenerationListView(APIView):
     """List all generations for a creation or create a new generation."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         tags=['Generations'],
         summary='List Generations for Creation',
@@ -557,7 +557,7 @@ class GenerationListView(APIView):
         queryset = creation.generations.all()
         serializer = GenerationListSerializer(queryset, many=True)
         return Response(serializer.data)
-    
+
     @extend_schema(
         tags=['Generations'],
         summary='Create New Generation',
@@ -569,7 +569,7 @@ class GenerationListView(APIView):
         creation = get_object_or_404(Creation, uuid=creation_uuid)
         data = request.data.copy()
         data['creation'] = creation.uuid
-        
+
         serializer = GenerationCreateSerializer(data=data)
         if serializer.is_valid():
             generation = serializer.save()
@@ -584,7 +584,7 @@ class GenerationDetailView(APIView):
     """Retrieve or delete a generation."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         tags=['Generations'],
         summary='Get Generation Details',
@@ -595,7 +595,7 @@ class GenerationDetailView(APIView):
         generation = get_object_or_404(Generation, uuid=uuid)
         serializer = GenerationDetailSerializer(generation)
         return Response(serializer.data)
-    
+
     @extend_schema(
         tags=['Generations'],
         summary='Update Generation',
@@ -610,7 +610,7 @@ class GenerationDetailView(APIView):
             serializer.save()
             return Response(GenerationDetailSerializer(generation).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
     @extend_schema(
         tags=['Generations'],
         summary='Delete Generation',
@@ -629,7 +629,7 @@ class PostListView(APIView):
     """List all posts or create a new post."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         tags=['Posts'],
         summary='List All Posts',
@@ -662,24 +662,24 @@ class PostListView(APIView):
     def get(self, request):
         user = get_current_user(request)
         queryset = Post.objects.all()
-        
+
         # Filter by current user
         if user and user.user_id != 'service':
             queryset = queryset.filter(user_id=user.user_id)
-        
+
         # Filter by brand
         brand_uuid = request.query_params.get('brand_uuid')
         if brand_uuid:
             queryset = queryset.filter(brand__uuid=brand_uuid)
-        
+
         # Filter by status
         status_filter = request.query_params.get('status')
         if status_filter:
             queryset = queryset.filter(status=status_filter)
-        
+
         serializer = PostListSerializer(queryset, many=True)
         return Response(serializer.data)
-    
+
     @extend_schema(
         tags=['Posts'],
         summary='Create New Post',
@@ -727,16 +727,16 @@ class PostListView(APIView):
     )
     def post(self, request):
         user = get_current_user(request)
-        
+
         serializer = PostCreateSerializer(data=request.data)
         if serializer.is_valid():
             post = serializer.save()
-            
+
             # Associate with current user
             if user:
                 post.user_id = user.user_id
                 post.save()
-            
+
             return Response(
                 PostDetailSerializer(post).data,
                 status=status.HTTP_201_CREATED
@@ -748,7 +748,7 @@ class PostDetailView(APIView):
     """Retrieve, update or delete a post."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         tags=['Posts'],
         summary='Get Post Details',
@@ -759,7 +759,7 @@ class PostDetailView(APIView):
         post = get_object_or_404(Post, uuid=uuid)
         serializer = PostDetailSerializer(post)
         return Response(serializer.data)
-    
+
     @extend_schema(
         tags=['Posts'],
         summary='Update Post',
@@ -776,15 +776,15 @@ class PostDetailView(APIView):
             comments = serializer.validated_data.get('comments', post.comments)
             shares = serializer.validated_data.get('shares', post.shares)
             reach = serializer.validated_data.get('reach', post.reach)
-            
+
             if reach > 0:
                 total_engagement = likes + comments + shares
                 post.engagement_rate = (total_engagement / reach) * 100
-            
+
             serializer.save()
             return Response(PostDetailSerializer(post).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
     @extend_schema(
         tags=['Posts'],
         summary='Delete Post',
@@ -801,7 +801,7 @@ class PostMetricsView(APIView):
     """Update post performance metrics."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         tags=['Posts'],
         summary='Update Post Metrics',
@@ -817,12 +817,12 @@ class PostMetricsView(APIView):
             for field in ['likes', 'comments', 'shares', 'reach', 'engagement_rate']:
                 if field in serializer.validated_data:
                     setattr(post, field, serializer.validated_data[field])
-            
+
             # Recalculate engagement rate if not provided
             if 'engagement_rate' not in serializer.validated_data and post.reach > 0:
                 total_engagement = post.likes + post.comments + post.shares
                 post.engagement_rate = (total_engagement / post.reach) * 100
-            
+
             post.save()
             return Response(PostDetailSerializer(post).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -834,7 +834,7 @@ class PlatformInsightListView(APIView):
     """List all platform insights or create new ones."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         tags=['Platform Insights'],
         summary='List Platform Insights',
@@ -849,29 +849,29 @@ class PlatformInsightListView(APIView):
     )
     def get(self, request):
         queryset = PlatformInsight.objects.all()
-        
+
         # Filter by brand
         brand_uuid = request.query_params.get('brand_uuid')
         if brand_uuid:
             queryset = queryset.filter(brand__uuid=brand_uuid)
-        
+
         # Filter by platform
         platform = request.query_params.get('platform')
         if platform:
             queryset = queryset.filter(platform=platform)
-        
+
         # Filter by date range
         date_from = request.query_params.get('date_from')
         if date_from:
             queryset = queryset.filter(date__gte=date_from)
-        
+
         date_to = request.query_params.get('date_to')
         if date_to:
             queryset = queryset.filter(date__lte=date_to)
-        
+
         serializer = PlatformInsightSerializer(queryset, many=True)
         return Response(serializer.data)
-    
+
     @extend_schema(
         tags=['Platform Insights'],
         summary='Create Platform Insight',
@@ -894,7 +894,7 @@ class PlatformInsightBulkCreateView(APIView):
     """Bulk create platform insights."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         tags=['Platform Insights'],
         summary='Bulk Create Insights',
@@ -917,7 +917,7 @@ class PlatformInsightDetailView(APIView):
     """Retrieve or delete a platform insight."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         tags=['Platform Insights'],
         summary='Get Platform Insight',
@@ -928,7 +928,7 @@ class PlatformInsightDetailView(APIView):
         insight = get_object_or_404(PlatformInsight, uuid=uuid)
         serializer = PlatformInsightSerializer(insight)
         return Response(serializer.data)
-    
+
     @extend_schema(
         tags=['Platform Insights'],
         summary='Delete Platform Insight',
@@ -947,7 +947,7 @@ class MediaFileListView(APIView):
     """List all media files for a generation."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         tags=['Media Files'],
         summary='List Media Files',
@@ -959,7 +959,7 @@ class MediaFileListView(APIView):
         queryset = generation.media_files.all()
         serializer = MediaFileSerializer(queryset, many=True)
         return Response(serializer.data)
-    
+
     @extend_schema(
         tags=['Media Files'],
         summary='Create Media File',
@@ -971,7 +971,7 @@ class MediaFileListView(APIView):
         generation = get_object_or_404(Generation, uuid=generation_uuid)
         data = request.data.copy()
         data['generation'] = generation.uuid
-        
+
         serializer = MediaFileCreateSerializer(data=data)
         if serializer.is_valid():
             media_file = serializer.save()
@@ -986,7 +986,7 @@ class MediaFileDetailView(APIView):
     """Retrieve or delete a media file."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         tags=['Media Files'],
         summary='Get Media File',
@@ -997,7 +997,7 @@ class MediaFileDetailView(APIView):
         media_file = get_object_or_404(MediaFile, uuid=uuid)
         serializer = MediaFileSerializer(media_file)
         return Response(serializer.data)
-    
+
     @extend_schema(
         tags=['Media Files'],
         summary='Delete Media File',

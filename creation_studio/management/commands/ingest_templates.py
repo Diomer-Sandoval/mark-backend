@@ -8,7 +8,7 @@ Usage:
 """
 
 from django.core.management.base import BaseCommand
-from creation_studio.ingest_templates import ingest_templates, validate_ingestion, test_similarity_search
+from creation_studio.templates.ingest import ingest_templates, validate_ingestion, test_similarity_search
 
 
 class Command(BaseCommand):

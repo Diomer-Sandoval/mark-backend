@@ -11,32 +11,32 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 
-from .auth_debug import decode_token_debug, extract_user_from_token
-from .authentication import SIAJWTAuthentication, SIAAPIKeyAuthentication
+from ..auth.debug import decode_token_debug, extract_user_from_token
+from ..auth.backends import SIAJWTAuthentication, SIAAPIKeyAuthentication
 
 
 class TestTokenView(APIView):
     """
     Generate a test JWT token for Swagger UI testing.
-    
+
     WARNING: This endpoint is for DEVELOPMENT ONLY.
     Do not enable in production!
     """
     permission_classes = [AllowAny]
-    
+
     @extend_schema(
         tags=['Development'],
         summary='Generate Test JWT Token',
         description='''
         Generate a test JWT token for development testing.
-        
+
         **WARNING**: This endpoint is for DEVELOPMENT ONLY.
-        
+
         Use this token in Swagger UI:
         1. Click "Authorize" button
         2. In "SIA JWT Auth" section, enter: `Bearer <token>`
         3. Click "Authorize" and "Close"
-        
+
         The generated token will be associated with dummy user data.
         ''',
         request={
@@ -97,7 +97,7 @@ class TestTokenView(APIView):
         user_id = request.data.get('user_id', str(uuid.uuid4()))
         email = request.data.get('email', 'test@example.com')
         tenant_id = request.data.get('tenant_id', str(uuid.uuid4()))
-        
+
         # Create JWT payload
         payload = {
             'sub': user_id,
@@ -109,14 +109,14 @@ class TestTokenView(APIView):
             'exp': datetime.now(timezone.utc) + timedelta(hours=1),
             'type': 'test_token'
         }
-        
+
         # Generate token
         try:
             import jwt
             # Use a test secret
             test_secret = settings.SECRET_KEY[:32]
             token = jwt.encode(payload, test_secret, algorithm='HS256')
-            
+
             return Response({
                 'token': token,
                 'user': {
@@ -139,13 +139,13 @@ class TestTokenView(APIView):
 class AuthStatusView(APIView):
     """
     Check current authentication status.
-    
+
     Returns information about the currently authenticated user.
     """
     # Require authentication to check status
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     @extend_schema(
         tags=['Development'],
         summary='Check Auth Status',
@@ -156,20 +156,20 @@ class AuthStatusView(APIView):
         }
     )
     def get(self, request):
-        from .authentication import get_current_user
-        
+        from ..auth.backends import get_current_user
+
         # Get the Authorization header
         auth_header = request.headers.get('Authorization', '')
-        
+
         user = get_current_user(request)
-        
+
         if not user:
             # Try to decode the token for debugging
             debug_info = None
             if auth_header.startswith('Bearer '):
                 token = auth_header[7:]
                 debug_info = extract_user_from_token(token)
-            
+
             return Response({
                 'authenticated': False,
                 'message': 'No authentication provided',
@@ -177,7 +177,7 @@ class AuthStatusView(APIView):
                 'auth_header_prefix': auth_header[:20] + '...' if auth_header else None,
                 'token_debug': debug_info
             }, status=status.HTTP_200_OK)  # Return 200 for debugging
-        
+
         return Response({
             'authenticated': True,
             'user': {
@@ -193,11 +193,11 @@ class AuthStatusView(APIView):
 class TestSIAConnectionView(APIView):
     """
     Test SIA backend connection.
-    
+
     Directly calls SIA /api/auth/profile/ endpoint to verify connectivity.
     """
     permission_classes = [AllowAny]
-    
+
     @extend_schema(
         tags=['Development'],
         summary='Test SIA Connection',
@@ -218,24 +218,24 @@ class TestSIAConnectionView(APIView):
     )
     def post(self, request):
         token = request.data.get('token', '')
-        
+
         if not token:
             return Response(
                 {'error': 'No token provided'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         # Remove Bearer prefix if present
         if token.startswith('Bearer '):
             token = token[7:]
-        
+
         try:
             import requests
             from django.conf import settings
-            
+
             sia_base_url = getattr(settings, 'SIA_BASE_URL', 'http://127.0.0.1:8001')
             endpoint = f"{sia_base_url}/api/auth/profile/"
-            
+
             response = requests.get(
                 endpoint,
                 headers={
@@ -244,15 +244,15 @@ class TestSIAConnectionView(APIView):
                 },
                 timeout=10
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
-                
+
                 # Extract user data from SIA response
                 if 'data' in data:
                     user_data = data['data']
                     tenant = user_data.get('tenant', {})
-                    
+
                     return Response({
                         'sia_base_url': sia_base_url,
                         'endpoint': endpoint,
@@ -286,7 +286,7 @@ class TestSIAConnectionView(APIView):
                     'error': f'SIA returned {response.status_code}',
                     'response_body': response.text
                 }, status=response.status_code)
-                
+
         except Exception as e:
             import traceback
             return Response({
@@ -298,11 +298,11 @@ class TestSIAConnectionView(APIView):
 class DebugTokenView(APIView):
     """
     Debug endpoint to decode a JWT token.
-    
+
     Shows what's inside the token without verifying signature.
     """
     permission_classes = [AllowAny]
-    
+
     @extend_schema(
         tags=['Development'],
         summary='Debug JWT Token',
@@ -323,17 +323,17 @@ class DebugTokenView(APIView):
     )
     def post(self, request):
         token = request.data.get('token', '')
-        
+
         if not token:
             return Response(
                 {'error': 'No token provided'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         # Remove Bearer prefix if present
         if token.startswith('Bearer '):
             token = token[7:]
-        
+
         result = extract_user_from_token(token)
-        
+
         return Response(result)

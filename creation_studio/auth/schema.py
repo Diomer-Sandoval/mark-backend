@@ -12,29 +12,30 @@ from drf_spectacular.plumbing import build_bearer_security_scheme_object
 class SIAJWTAuthenticationExtension(OpenApiAuthenticationExtension):
     """
     OpenAPI extension for SIA JWT Authentication.
-    
+
     Documents the Bearer token authentication in Swagger UI.
     """
-    target_class = 'creation_studio.authentication.SIAJWTAuthentication'
+    target_class = 'creation_studio.auth.SIAJWTAuthentication'
     name = 'SIA JWT Auth'
-    
+
     def get_security_definition(self, auto_schema):
-        return build_bearer_security_scheme_object(
+        schema = build_bearer_security_scheme_object(
             header_name='Authorization',
             token_prefix='Bearer',
-            description='SIA Solutions JWT token. Obtain from SIA Solutions login endpoint.'
         )
+        schema['description'] = 'SIA Solutions JWT token. Obtain from SIA Solutions login endpoint.'
+        return schema
 
 
 class SIAAPIKeyAuthenticationExtension(OpenApiAuthenticationExtension):
     """
     OpenAPI extension for SIA API Key Authentication.
-    
+
     Documents the API key authentication in Swagger UI.
     """
-    target_class = 'creation_studio.authentication.SIAAPIKeyAuthentication'
+    target_class = 'creation_studio.auth.SIAAPIKeyAuthentication'
     name = 'SIA API Key'
-    
+
     def get_security_definition(self, auto_schema):
         return {
             'type': 'apiKey',
