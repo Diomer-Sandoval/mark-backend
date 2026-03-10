@@ -1,3 +1,13 @@
+"""
+Django settings for mark-backend project.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/6.0/topics/settings/
+
+For the full list of settings and their values, see
+https://docs.djangoproject.com/en/6.0/ref/settings/
+"""
+
 from pathlib import Path
 from dotenv import load_dotenv
 import os
@@ -9,19 +19,22 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
+# =============================================================================
+# SECURITY SETTINGS
+# =============================================================================
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-n81qjcd3%9t^v3k7v4+nc#njowj%jz*xx&%n+@d!=)n!*&yr#t'
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-dev-key-change-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() == 'true'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 
-# Application definition
+# =============================================================================
+# APPLICATION DEFINITION
+# =============================================================================
 
 INSTALLED_APPS = [
     'corsheaders',
@@ -29,6 +42,7 @@ INSTALLED_APPS = [
     'brand_dna_extractor',
     'rest_framework',
     'drf_spectacular',
+    'corsheaders',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -38,6 +52,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -68,8 +83,9 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 
-# Database
-# https://docs.djangoproject.com/en/6.0/ref/settings/#databases
+# =============================================================================
+# DATABASE
+# =============================================================================
 
 DATABASES = {
     'default': {
@@ -79,8 +95,9 @@ DATABASES = {
 }
 
 
-# Password validation
-# https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
+# =============================================================================
+# PASSWORD VALIDATION
+# =============================================================================
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -98,22 +115,33 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
-# Internationalization
-# https://docs.djangoproject.com/en/6.0/topics/i18n/
+# =============================================================================
+# INTERNATIONALIZATION
+# =============================================================================
 
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
 
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/6.0/howto/static-files/
+# =============================================================================
+# STATIC FILES
+# =============================================================================
 
 STATIC_URL = 'static/'
+
+
+# =============================================================================
+# DEFAULT PRIMARY KEY FIELD TYPE
+# =============================================================================
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# =============================================================================
+# DJANGO REST FRAMEWORK CONFIGURATION
+# =============================================================================
 
 # CORS
 CORS_ALLOWED_ORIGINS = [
@@ -130,21 +158,127 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'creation_studio.auth.SIAJWTAuthentication',
         'creation_studio.auth.SIAAPIKeyAuthentication',
+        'creation_studio.auth.SIASessionAuthentication',
     ],
 }
 
 # Development mode - set to True to allow testing without authentication
-# In production, this should always be False
 DEV_MODE_ALLOW_UNAUTHENTICATED = os.getenv('DEV_MODE_ALLOW_UNAUTHENTICATED', 'False').lower() == 'true'
 
 if DEV_MODE_ALLOW_UNAUTHENTICATED:
     REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES'] = ['rest_framework.permissions.AllowAny']
     REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'] = []
 
-# drf-spectacular Configuration (Swagger/OpenAPI)
-# SIA Solutions Integration Settings
-SIA_BASE_URL = os.getenv('SIA_BASE_URL', 'https://sia-backend-sbw7.onrender.com')  # Production SIA backend
-SIA_JWT_SECRET = os.getenv('SIA_JWT_SECRET', None)  # For local JWT validation (optional)
+
+# =============================================================================
+# SIA SOLUTIONS INTEGRATION
+# =============================================================================
+
+# SIA Backend URL (the actual API server)
+SIA_BASE_URL = os.getenv('SIA_BASE_URL', 'https://sia-backend-sbw7.onrender.com')
+
+# SIA Frontend URL (the landing page - for OAuth redirect)
+SIA_FRONTEND_URL = os.getenv('SIA_FRONTEND_URL', 'http://localhost:3000')
+
+# JWT Secret for local validation (optional)
+SIA_JWT_SECRET = os.getenv('SIA_JWT_SECRET', None)
+
+
+# =============================================================================
+# OAUTH 2.0 CONFIGURATION
+# =============================================================================
+
+# OAuth client credentials (from SIA backend)
+SIA_OAUTH_CLIENT_ID = os.getenv('SIA_OAUTH_CLIENT_ID', 'mark-agent')
+SIA_OAUTH_CLIENT_SECRET = os.getenv('SIA_OAUTH_CLIENT_SECRET', '')
+
+
+# =============================================================================
+# MARK FRONTEND CONFIGURATION
+# =============================================================================
+
+# Mark Frontend URL (where users are redirected after OAuth)
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5174')
+
+# OAuth error page path
+OAUTH_ERROR_PATH = os.getenv('OAUTH_ERROR_PATH', '/auth/error')
+
+# Include user info in OAuth redirect
+OAUTH_INCLUDE_USER_INFO = os.getenv('OAUTH_INCLUDE_USER_INFO', 'False').lower() == 'true'
+
+
+# =============================================================================
+# OPENAI CONFIGURATION
+# =============================================================================
+
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', None)
+
+
+# =============================================================================
+# SESSION CONFIGURATION (FOR OAUTH)
+# =============================================================================
+
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+SESSION_COOKIE_AGE = int(os.getenv('SESSION_COOKIE_AGE', '3600'))  # 1 hour
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SECURE = not DEBUG  # Secure in production
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_SAVE_EVERY_REQUEST = True
+
+
+# =============================================================================
+# CACHE CONFIGURATION (FOR OAUTH STATE)
+# =============================================================================
+
+# Use database cache for persistence across server restarts
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'django_cache',
+    }
+}
+
+
+# =============================================================================
+# CORS CONFIGURATION
+# =============================================================================
+
+# Parse CORS origins from environment variable
+# Format: comma-separated list of origins
+# Example: CORS_ALLOWED_ORIGINS=http://localhost:5174,http://localhost:3000
+_cors_origins = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5174,http://localhost:3000')
+CORS_ALLOWED_ORIGINS = [origin.strip() for origin in _cors_origins.split(',') if origin.strip()]
+
+# Allow credentials (cookies, authorization headers)
+CORS_ALLOW_CREDENTIALS = os.getenv('CORS_ALLOW_CREDENTIALS', 'True').lower() == 'true'
+
+# Allow all common HTTP methods
+CORS_ALLOW_METHODS = [
+    'GET',
+    'POST',
+    'PUT',
+    'PATCH',
+    'DELETE',
+    'OPTIONS',
+]
+
+# Allow all common headers
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+
+# =============================================================================
+# DRF-SPECTACULAR CONFIGURATION (SWAGGER/OPENAPI)
+# =============================================================================
 
 SPECTACULAR_SETTINGS = {
     # Custom authentication extensions
@@ -229,5 +363,26 @@ SPECTACULAR_SETTINGS = {
                 'description': 'SIA Solutions API key for service authentication. Format: sia_<32-char>_<16-char>'
             }
         }
+    },
+}
+
+
+# =============================================================================
+# LOGGING CONFIGURATION
+# =============================================================================
+
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': LOG_LEVEL,
     },
 }

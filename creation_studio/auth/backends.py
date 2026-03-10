@@ -294,6 +294,42 @@ class AllowUnauthenticated(authentication.BaseAuthentication):
         return None
 
 
+class SIASessionAuthentication(authentication.BaseAuthentication):
+    """
+    Authenticate using Django session (for OAuth web flow).
+    
+    This authentication class checks if user is authenticated via Django session
+    after OAuth login. Used for web browser clients that have gone through
+    the OAuth flow.
+    
+    Expected: Valid Django session with user_id stored from OAuth.
+    """
+    
+    def authenticate(self, request: Request):
+        # Check if session has user data from OAuth
+        if not request.session.get('is_authenticated'):
+            return None
+        
+        user_id = request.session.get('user_id')
+        if not user_id:
+            return None
+        
+        # Create SIAUser from session data
+        user = SIAUser(
+            user_id=user_id,
+            email=request.session.get('email', ''),
+            tenant_id=request.session.get('tenant_id'),
+            full_name=request.session.get('full_name'),
+            role=request.session.get('role', 'user'),
+            agent_access=request.session.get('agent_access', [])
+        )
+        
+        # Get access token from session if available
+        token = request.session.get('access_token', 'session')
+        
+        return (user, token)
+
+
 def get_current_user(request):
     """
     Helper to get the current authenticated user from request.
