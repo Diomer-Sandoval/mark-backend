@@ -29,6 +29,7 @@ urlpatterns = [
     # API Endpoints
     path('api/', include('creation_studio.urls')),
     path('api/', include('brand_dna_extractor.urls')),
+    path('api/insights/', include('platform_insights.urls')),
     
     # Swagger/OpenAPI Documentation
     # Download OpenAPI schema
