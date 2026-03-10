@@ -30,8 +30,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter
 
-from .sia_client import get_sia_client
-from .authentication import SIAUser
+from .auth.client import get_sia_client
+from .auth.backends import SIAUser
 
 logger = logging.getLogger(__name__)
 
