@@ -1,9 +1,13 @@
-from typing import Annotated
-from langgraph.graph.message import add_messages
-from typing_extensions import TypedDict
+from typing import TypedDict, Optional, Dict, Any
 
 
 class BrandDNAState(TypedDict):
-    messages: Annotated[list, add_messages]
-    brand_input: str
-    brand_dna: dict
+    input_url: str
+    user_id: Optional[str]
+    tenant_id: Optional[str]
+    scraper_result: Dict[str, Any]
+    preprocessed_data: str
+    llm_output: Dict[str, Any]
+    brand_id: Optional[str]
+    db_saved: bool
+    error: Optional[str]

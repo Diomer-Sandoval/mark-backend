@@ -5,7 +5,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse, inline_serializer
 
-from .graph import build_brand_dna_graph
+from .graphs.agent import build_brand_dna_graph
 
 # Initialize graph parser
 agent = build_brand_dna_graph()

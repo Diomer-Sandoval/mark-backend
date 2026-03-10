@@ -1,27 +1,24 @@
 from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import ToolNode, tools_condition
 
 from .state import BrandDNAState
-from .nodes.extractor.node import extractor_node
-from .nodes.extractor.tools import tools
-from .nodes.formatter.node import formatter_node
+from .nodes.scraper.node import scraper_node
+from .nodes.preprocessing.node import preprocessing_node
+from .nodes.ai_agent.node import ai_agent_node
+from .nodes.persistence.node import persistence_node
 
 
-def build_agent():
+def build_brand_dna_graph():
     graph = StateGraph(BrandDNAState)
 
-    graph.add_node("extractor", extractor_node)
-    graph.add_node("formatter", formatter_node)
+    graph.add_node("Scraper", scraper_node)
+    graph.add_node("Preprocessing", preprocessing_node)
+    graph.add_node("AIAgent", ai_agent_node)
+    graph.add_node("Persistence", persistence_node)
 
-    if tools:
-        graph.add_node("tools", ToolNode(tools))
-        graph.add_edge(START, "extractor")
-        graph.add_conditional_edges("extractor", tools_condition, {"tools": "tools", "__end__": "formatter"})
-        graph.add_edge("tools", "extractor")
-    else:
-        graph.add_edge(START, "extractor")
-        graph.add_edge("extractor", "formatter")
-
-    graph.add_edge("formatter", END)
+    graph.add_edge(START, "Scraper")
+    graph.add_conditional_edges("Scraper", lambda s: END if s.get("error") else "Preprocessing")
+    graph.add_conditional_edges("Preprocessing", lambda s: END if s.get("error") else "AIAgent")
+    graph.add_conditional_edges("AIAgent", lambda s: END if s.get("error") else "Persistence")
+    graph.add_edge("Persistence", END)
 
     return graph.compile()

@@ -19,11 +19,12 @@ class SIAJWTAuthenticationExtension(OpenApiAuthenticationExtension):
     name = 'SIA JWT Auth'
 
     def get_security_definition(self, auto_schema):
-        return build_bearer_security_scheme_object(
+        schema = build_bearer_security_scheme_object(
             header_name='Authorization',
             token_prefix='Bearer',
-            description='SIA Solutions JWT token. Obtain from SIA Solutions login endpoint.'
         )
+        schema['description'] = 'SIA Solutions JWT token. Obtain from SIA Solutions login endpoint.'
+        return schema
 
 
 class SIAAPIKeyAuthenticationExtension(OpenApiAuthenticationExtension):
