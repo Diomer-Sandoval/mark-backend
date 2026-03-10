@@ -5,9 +5,10 @@ All API endpoints are prefixed with /api/ in the main urls.py
 """
 
 from django.urls import path
-from . import views_api
-from . import views_core
-from . import views_test
+from .views import core as views_core
+from .views import templates as views_api
+from .views import dev as views_test
+from . import views_oauth
 
 urlpatterns = [
     # Development/Testing endpoints
@@ -15,6 +16,13 @@ urlpatterns = [
     path('auth/status/', views_test.AuthStatusView.as_view(), name='auth-status'),
     path('auth/debug-token/', views_test.DebugTokenView.as_view(), name='debug-token'),
     path('auth/test-sia/', views_test.TestSIAConnectionView.as_view(), name='test-sia'),
+    
+    # OAuth 2.0 Authentication endpoints
+    path('auth/oauth/initiate/', views_oauth.OAuthInitiateView.as_view(), name='oauth-initiate'),
+    path('auth/oauth/callback/', views_oauth.OAuthCallbackView.as_view(), name='oauth-callback'),
+    path('auth/oauth/status/', views_oauth.OAuthStatusView.as_view(), name='oauth-status'),
+    path('auth/oauth/logout/', views_oauth.OAuthLogoutView.as_view(), name='oauth-logout'),
+    path('auth/oauth/sso/', views_oauth.SSOLoginView.as_view(), name='oauth-sso'),
     # ============ Health Check ============
     path('health/', views_api.HealthCheckView.as_view(), name='health-check'),
     
