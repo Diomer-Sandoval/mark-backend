@@ -26,6 +26,7 @@ ALLOWED_HOSTS = []
 INSTALLED_APPS = [
     'creation_studio',
     'brand_dna_extractor',
+    'platform_insights',
     'rest_framework',
     'drf_spectacular',
     'django.contrib.admin',
