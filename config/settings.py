@@ -11,6 +11,11 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 from dotenv import load_dotenv
 import os
+import ssl
+
+# macOS fix: Python from python.org doesn't install system root certificates.
+# This disables SSL verification globally for local development.
+ssl._create_default_https_context = ssl._create_unverified_context
 
 # Load environment variables from .env file
 load_dotenv()

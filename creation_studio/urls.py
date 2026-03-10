@@ -8,6 +8,7 @@ from django.urls import path
 from .views import core as views_core
 from .views import templates as views_api
 from .views import dev as views_test
+from .views.content import generate as generate_view
 from . import views_oauth
 
 urlpatterns = [
@@ -50,11 +51,12 @@ urlpatterns = [
     path('creations/<str:uuid>/', views_core.CreationDetailView.as_view(), name='creation-detail'),
     
     # ============ Generation Endpoints ============
-    path('creations/<str:creation_uuid>/generations/', 
-         views_core.GenerationListView.as_view(), 
+    path('generations/', generate_view, name='generation-create'),
+    path('creations/<str:creation_uuid>/generations/',
+         views_core.GenerationListView.as_view(),
          name='generation-list'),
-    path('generations/<str:uuid>/', 
-         views_core.GenerationDetailView.as_view(), 
+    path('generations/<str:uuid>/',
+         views_core.GenerationDetailView.as_view(),
          name='generation-detail'),
     
     # ============ Post Endpoints ============

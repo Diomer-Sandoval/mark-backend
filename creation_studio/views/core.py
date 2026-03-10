@@ -49,6 +49,13 @@ from ..serializers import (
     # Media File
     MediaFileSerializer, MediaFileCreateSerializer,
 )
+from .content import (
+    agent as _image_agent,
+    carousel_agent as _carousel_agent,
+    video_agent as _video_agent,
+    _resolve_logo,
+    _ASPECT_RATIO_MAP,
+)
 
 
 def check_ownership(obj, user):
@@ -541,6 +548,198 @@ class CreationDetailView(APIView):
 
 # ============ Generation Endpoints ============
 
+_GENERATION_VALID_TYPES = ["image", "carousel", "video"]
+
+
+def _brand_context_from_creation(creation) -> tuple[dict, dict]:
+    """Return (brand_dna, identity) dicts built from the creation's brand."""
+    brand = creation.brand
+    if not brand:
+        return {}, {}
+
+    identity = {
+        "name": brand.name,
+        "logo_url": brand.logo_url,
+        "page_url": brand.page_url,
+        "industry": brand.industry,
+    }
+
+    dna = brand.dna
+    brand_dna = {}
+    if dna:
+        brand_dna = {
+            "primary_color": dna.primary_color,
+            "secondary_color": dna.secondary_color,
+            "accent_color": dna.accent_color,
+            "complementary_color": dna.complementary_color,
+            "font_body_family": dna.font_body_family,
+            "font_headings_family": dna.font_headings_family,
+            "voice_tone": dna.voice_tone,
+            "keywords": dna.keywords,
+            "description": dna.description,
+        }
+
+    return brand_dna, identity
+
+# Maps Creation.post_type → generation pipeline type
+_POST_TYPE_TO_PIPELINE = {
+    "post": "image",
+    "story": "image",
+    "infographic": "image",
+    "carousel": "carousel",
+    "reel": "video",
+}
+
+
+def _pipeline_image(creation, body: dict):
+    """Run the image pipeline and persist to ORM. Returns (Generation, extra_dict)."""
+    db_brand_dna, db_identity = _brand_context_from_creation(creation)
+    creation_platforms = [p for p in creation.platforms.split(",") if p.strip()] if creation.platforms else ["instagram"]
+    initial_state = {
+        "creation_uuid": str(creation.uuid),
+        "prompt": body.get("prompt", creation.original_prompt),
+        "platforms": body.get("platforms", creation_platforms),
+        "post_type": body.get("post_type", creation.post_type or "post"),
+        "post_tone": body.get("post_tone", creation.post_tone or "promotional"),
+        "brand_dna": body.get("brand_dna", db_brand_dna),
+        "identity": body.get("identity", db_identity),
+    }
+    result = _image_agent.invoke(initial_state)
+
+    image_url = result.get("image_url", "")
+    image_prompt = result.get("image_prompt", body.get("prompt", ""))
+
+    strategy_raw = result.get("strategy", "")
+    if "---" in strategy_raw:
+        _, copy_part = strategy_raw.split("---", 1)
+        copy_part = copy_part.strip()
+    else:
+        copy_part = strategy_raw
+
+    generation = Generation.objects.create(
+        creation=creation,
+        media_type="image",
+        prompt=image_prompt,
+        status="done",
+        generation_params={"platforms": initial_state["platforms"]},
+    )
+    if image_url:
+        MediaFile.objects.create(
+            generation=generation,
+            url=image_url,
+            file_type="image/jpeg",
+        )
+    return generation, {"copy": copy_part}
+
+
+def _pipeline_carousel(creation, body: dict):
+    """Run the carousel pipeline and persist to ORM. Returns (list[Generation], extra_dict)."""
+    db_brand_dna, db_identity = _brand_context_from_creation(creation)
+    logo_base64, logo_mime_type = _resolve_logo({**{"logo_url": db_identity.get("logo_url", "")}, **body})
+    creation_platform = creation.platforms.split(",")[0].strip() if creation.platforms else "instagram"
+    platform = body.get("platform", creation_platform)
+    num_slides = max(5, min(10, int(body.get("num_slides", 7))))
+
+    initial_state = {
+        "creation_uuid": str(creation.uuid),
+        "topic": body.get("prompt", creation.original_prompt),
+        "prompt": body.get("prompt", creation.original_prompt),
+        "platform": platform,
+        "platforms": [platform],
+        "post_tone": body.get("post_tone", creation.post_tone or "educational"),
+        "num_slides": num_slides,
+        "brand_dna": body.get("brand_dna", db_brand_dna),
+        "identity": body.get("identity", db_identity),
+        "logo_base64": logo_base64,
+        "logo_mime_type": logo_mime_type,
+    }
+    result = _carousel_agent.invoke(initial_state)
+
+    completed_slides = result.get("completed_slides", [])
+    generations = []
+    for slide in completed_slides:
+        gen = Generation.objects.create(
+            creation=creation,
+            media_type="image",
+            prompt=slide.get("headline", ""),
+            status="done",
+            generation_params={
+                "slide_index": slide.get("index"),
+                "headline": slide.get("headline", ""),
+                "qc_passed": slide.get("qc_passed", False),
+                "qc_attempts": slide.get("qc_attempts", 1),
+            },
+        )
+        if slide.get("image_url"):
+            MediaFile.objects.create(
+                generation=gen,
+                url=slide["image_url"],
+                file_type="image/jpeg",
+            )
+        generations.append(gen)
+
+    return generations, {
+        "caption": result.get("caption", ""),
+        "hashtags": result.get("hashtags", []),
+    }
+
+
+def _pipeline_video(creation, body: dict):
+    """Run the video pipeline and persist to ORM. Returns (list[Generation], extra_dict)."""
+    db_brand_dna, db_identity = _brand_context_from_creation(creation)
+    logo_base64, logo_mime_type = _resolve_logo({**{"logo_url": db_identity.get("logo_url", "")}, **body})
+    creation_platform = creation.platforms.split(",")[0].strip() if creation.platforms else "Instagram Reels"
+    platform = body.get("platform", creation_platform)
+    num_scenes = max(3, min(6, int(body.get("num_scenes", 4))))
+    scene_duration = int(body.get("scene_duration", 6))
+    if scene_duration not in (5, 6, 8):
+        scene_duration = 6
+
+    initial_state = {
+        "creation_uuid": str(creation.uuid),
+        "topic": body.get("prompt", creation.original_prompt),
+        "prompt": body.get("prompt", creation.original_prompt),
+        "platform": platform,
+        "platforms": [platform],
+        "video_tone": body.get("video_tone", creation.post_tone or "General"),
+        "num_scenes": num_scenes,
+        "scene_duration": scene_duration,
+        "aspect_ratio": _ASPECT_RATIO_MAP.get(platform.lower(), "9:16"),
+        "brand_dna": body.get("brand_dna", db_brand_dna),
+        "identity": body.get("identity", db_identity),
+        "logo_base64": logo_base64,
+        "logo_mime_type": logo_mime_type,
+    }
+    result = _video_agent.invoke(initial_state)
+
+    completed_scenes = result.get("completed_scenes", [])
+    generations = []
+    for scene in completed_scenes:
+        gen = Generation.objects.create(
+            creation=creation,
+            media_type="video",
+            prompt=f"Scene {scene.get('scene_number', '')}",
+            status="done",
+            generation_params={
+                "scene_number": scene.get("scene_number"),
+                "type": scene.get("type", ""),
+                "filtered": scene.get("filtered", False),
+            },
+        )
+        if scene.get("video_url"):
+            MediaFile.objects.create(
+                generation=gen,
+                url=scene["video_url"],
+                file_type="video/mp4",
+            )
+        generations.append(gen)
+
+    return generations, {
+        "caption": result.get("caption", ""),
+        "hashtags": result.get("hashtags", []),
+    }
+
+
 class GenerationListView(APIView):
     """List all generations for a creation or create a new generation."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
@@ -561,23 +760,66 @@ class GenerationListView(APIView):
     @extend_schema(
         tags=['Generations'],
         summary='Create New Generation',
-        description='Trigger a new AI visual generation. Use parent_uuid for editing an existing asset.',
-        request=GenerationCreateSerializer,
-        responses={201: GenerationDetailSerializer}
+        description=(
+            "Trigger an AI generation pipeline for an existing creation.\n\n"
+            "**`type: image`** — Generate one AI image + marketing copy.\n"
+            "```json\n"
+            '{"type":"image","prompt":"...","platforms":["instagram"],"post_type":"post","post_tone":"promotional","brand_dna":{},"identity":{}}\n'
+            "```\n"
+            "Response: `{generation: {...}, copy: \"...\"}`\n\n"
+            "**`type: carousel`** — Generate a multi-slide branded carousel (5–10 slides).\n"
+            "```json\n"
+            '{"type":"carousel","topic":"...","platform":"instagram","post_tone":"educational","num_slides":7,"brand_dna":{}}\n'
+            "```\n"
+            "Response: `{generations: [...], caption: \"...\", hashtags: [...]}`\n\n"
+            "**`type: video`** — Generate a multi-scene branded video (3–6 scenes).\n"
+            "```json\n"
+            '{"type":"video","topic":"...","platform":"Instagram Reels","video_tone":"General","num_scenes":4,"scene_duration":6,"brand_dna":{}}\n'
+            "```\n"
+            "Response: `{generations: [...], caption: \"...\", hashtags: [...]}`\n"
+        ),
+        responses={201: GenerationDetailSerializer},
     )
     def post(self, request, creation_uuid):
         creation = get_object_or_404(Creation, uuid=creation_uuid)
-        data = request.data.copy()
-        data['creation'] = creation.uuid
+        body = request.data
+        # Infer pipeline type from creation.post_type if not explicitly provided
+        content_type = body.get("type") or _POST_TYPE_TO_PIPELINE.get(creation.post_type)
 
-        serializer = GenerationCreateSerializer(data=data)
-        if serializer.is_valid():
-            generation = serializer.save()
+        if not content_type:
             return Response(
-                GenerationDetailSerializer(generation).data,
-                status=status.HTTP_201_CREATED
+                {"error": f"Could not infer type from creation.post_type='{creation.post_type}'. Provide 'type' explicitly. Valid values: {_GENERATION_VALID_TYPES}"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            if content_type == "image":
+                generation, extra = _pipeline_image(creation, body)
+                return Response(
+                    {"generation": GenerationDetailSerializer(generation).data, **extra},
+                    status=status.HTTP_201_CREATED,
+                )
+            elif content_type == "carousel":
+                generations, extra = _pipeline_carousel(creation, body)
+                return Response(
+                    {"generations": GenerationDetailSerializer(generations, many=True).data, **extra},
+                    status=status.HTTP_201_CREATED,
+                )
+            elif content_type == "video":
+                generations, extra = _pipeline_video(creation, body)
+                return Response(
+                    {"generations": GenerationDetailSerializer(generations, many=True).data, **extra},
+                    status=status.HTTP_201_CREATED,
+                )
+            else:
+                return Response(
+                    {"error": f"Unknown type '{content_type}'. Valid values: {_GENERATION_VALID_TYPES}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class GenerationDetailView(APIView):
