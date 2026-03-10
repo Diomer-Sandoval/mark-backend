@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'creation_studio',
     'brand_dna_extractor',
+    'platform_insights',
     'rest_framework',
     'drf_spectacular',
     'django.contrib.admin',
