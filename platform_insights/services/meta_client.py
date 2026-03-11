@@ -1,3 +1,6 @@
+"""
+Meta API Client for fetching Instagram and Facebook insights.
+"""
 import logging
 import requests
 from datetime import timedelta
@@ -22,7 +25,7 @@ class MetaInsightService:
         """Fetch insights for the last `days` days from Instagram."""
         if not self.token or not self.ig_account_id:
             logger.error("Missing Meta Access Token or Account ID.")
-            raise ValueError("Missing Meta Access Token or Account I")
+            return []
 
         end_date = now()
         start_date = end_date - timedelta(days=days)
@@ -30,7 +33,6 @@ class MetaInsightService:
         since_ts = int(start_date.timestamp())
         until_ts = int(end_date.timestamp())
 
-        # First request: Time-series metrics (reach)
         url = f"{self.BASE_URL}/{self.ig_account_id}/insights"
         reach_params = {
             "metric": "reach",
@@ -43,11 +45,9 @@ class MetaInsightService:
         reach_response = self.session.get(url, params=reach_params)
         
         if reach_response.status_code != 200:
-            error_msg = f"Error fetching Instagram reach insights: {reach_response.text}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+            logger.error(f"Error fetching Instagram reach insights: {reach_response.text}")
+            return []
 
-        # Second request: Lifetime/Total metrics (profile_views) that require metric_type=total_value
         pv_params = {
             "metric": "profile_views",
             "metric_type": "total_value",
@@ -58,11 +58,9 @@ class MetaInsightService:
         }
 
         pv_response = self.session.get(url, params=pv_params)
-        
         if pv_response.status_code != 200:
-            error_msg = f"Error fetching Instagram profile_views: {pv_response.text}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+            logger.error(f"Error fetching Instagram profile_views: {pv_response.text}")
+            return []
 
         reach_data = reach_response.json().get('data', [])
         pv_data = pv_response.json().get('data', [])
@@ -87,7 +85,6 @@ class MetaInsightService:
                 
                 if metric_name == 'reach':
                     daily_metrics[date_str]['reach'] = value_item['value']
-                    # Using reach as impressions fallback since impressions is no longer a valid metric
                     daily_metrics[date_str]['impressions'] = value_item['value']
                 elif metric_name == 'profile_views':
                     daily_metrics[date_str]['_engagements'] = value_item['value']
@@ -106,7 +103,7 @@ class MetaInsightService:
         """Fetch insights for Facebook Page."""
         if not self.token or not self.fb_page_id:
             logger.error("Missing Meta Access Token or Page ID.")
-            raise ValueError("Missing Meta Access Token or Page ID.")
+            return []
 
         end_date = now()
         start_date = end_date - timedelta(days=days)
@@ -114,7 +111,6 @@ class MetaInsightService:
         since_ts = int(start_date.timestamp())
         until_ts = int(end_date.timestamp())
 
-        # 1. Fetch Follower count (Global info from Graph API)
         url_profile = f"{self.BASE_URL}/{self.fb_page_id}"
         profile_params = {
             "fields": "followers_count",
@@ -126,9 +122,7 @@ class MetaInsightService:
         if profile_response.status_code == 200:
             followers = profile_response.json().get('followers_count', 0)
 
-        # 2. Fetch Time-series insights
         url = f"{self.BASE_URL}/{self.fb_page_id}/insights"
-        
         params = {
             "metric": "page_views_total,page_impressions_unique,page_post_engagements",
             "period": "day",
@@ -139,9 +133,8 @@ class MetaInsightService:
 
         response = self.session.get(url, params=params)
         if response.status_code != 200:
-            error_msg = f"Error fetching Facebook insights: {response.text}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+            logger.error(f"Error fetching Facebook insights: {response.text}")
+            return []
 
         data = response.json().get('data', [])
         daily_metrics = {}
@@ -155,7 +148,7 @@ class MetaInsightService:
                         "date": date_str,
                         "impressions": 0,
                         "reach": 0,
-                        "followers": followers, # Current count applied globally
+                        "followers": followers,
                         "engagement_rate": 0.0,
                         "_engagements": 0
                     }
@@ -211,7 +204,6 @@ class MetaInsightService:
     def fetch_instagram_posts(self, limit=50):
         """Fetch latest posts from Instagram Platform."""
         if not self.token or not self.ig_account_id:
-            logger.error("Missing Meta Access Token or Account ID.")
             return []
             
         url = f"{self.BASE_URL}/{self.ig_account_id}/media"
@@ -223,7 +215,6 @@ class MetaInsightService:
         
         response = self.session.get(url, params=params)
         if response.status_code != 200:
-            logger.error(f"Error fetching Instagram posts: {response.text}")
             return []
             
         return response.json().get('data', [])
@@ -231,7 +222,6 @@ class MetaInsightService:
     def fetch_facebook_posts(self, limit=50):
         """Fetch latest posts from Facebook Page."""
         if not self.token or not self.fb_page_id:
-            logger.error("Missing Meta Access Token or Page ID.")
             return []
             
         url = f"{self.BASE_URL}/{self.fb_page_id}/posts"
@@ -243,7 +233,6 @@ class MetaInsightService:
         
         response = self.session.get(url, params=params)
         if response.status_code != 200:
-            logger.error(f"Error fetching Facebook posts: {response.text}")
             return []
             
         return response.json().get('data', [])
@@ -260,19 +249,21 @@ class MetaInsightService:
             meta_id = p.get('id')
             if not meta_id: continue
             
-            existing = Post.objects.filter(brand=brand, metrics__meta_id=meta_id).first()
+            # Since metrics field is gone, we can't easily filter by meta_id unless we use final_copy 
+            # or add a field. But we stick to the provided schema.
+            # We'll just create new ones for now or skip if duplicate caption.
+            caption = p.get('caption', '')
             likes = p.get('like_count', 0)
             comments = p.get('comments_count', 0)
             
+            existing = Post.objects.filter(brand=brand, final_copy=caption).first()
             if existing:
                 existing.likes = likes
                 existing.comments = comments
                 existing.save(update_fields=['likes', 'comments'])
             else:
-                caption = p.get('caption', '')
                 media_type = p.get('media_type', '')
                 timestamp_str = p.get('timestamp')
-                permalink = p.get('permalink', '')
                 
                 post_type = 'post'
                 if media_type == 'VIDEO':
@@ -284,15 +275,14 @@ class MetaInsightService:
                 
                 Post.objects.create(
                     brand=brand,
-                    creation=None,
-                    copy=caption,
+                    user_id=brand.user_id,
+                    final_copy=caption,
                     status='published',
                     executed_at=executed_at,
                     post_type=post_type,
                     platforms='instagram',
                     likes=likes,
-                    comments=comments,
-                    metrics={'meta_id': meta_id, 'permalink': permalink}
+                    comments=comments
                 )
                 synced_count += 1
                 
@@ -301,38 +291,34 @@ class MetaInsightService:
             meta_id = p.get('id')
             if not meta_id: continue
             
-            existing = Post.objects.filter(brand=brand, metrics__meta_id=meta_id).first()
+            message = p.get('message', '')
             likes = p.get('likes', {}).get('summary', {}).get('total_count', 0)
             comments = p.get('comments', {}).get('summary', {}).get('total_count', 0)
-            
             shares = 0
             if p.get('shares'):
                  shares = p.get('shares', {}).get('count', 0)
             
+            existing = Post.objects.filter(brand=brand, final_copy=message).first()
             if existing:
                 existing.likes = likes
                 existing.comments = comments
                 existing.shares = shares
                 existing.save(update_fields=['likes', 'comments', 'shares'])
             else:
-                message = p.get('message', '')
                 timestamp_str = p.get('created_time')
-                permalink = p.get('permalink_url', '')
-                
                 executed_at = parse_datetime(timestamp_str) if timestamp_str else now()
                 
                 Post.objects.create(
                     brand=brand,
-                    creation=None,
-                    copy=message,
+                    user_id=brand.user_id,
+                    final_copy=message,
                     status='published',
                     executed_at=executed_at,
                     post_type='post',
                     platforms='facebook',
                     likes=likes,
                     comments=comments,
-                    shares=shares,
-                    metrics={'meta_id': meta_id, 'permalink': permalink}
+                    shares=shares
                 )
                 synced_count += 1
                 

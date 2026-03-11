@@ -7,16 +7,17 @@ from .models import (
     Generation,
     Post,
     PlatformInsight,
-    MediaFile,
+    Preview,
+    PreviewItem,
     TemplateDocument,
 )
 
 
 @admin.register(BrandDNA)
 class BrandDNAAdmin(admin.ModelAdmin):
-    list_display = ('uuid', 'primary_color', 'secondary_color', 'voice_tone', 'font_body_family')
-    search_fields = ('voice_tone', 'keywords', 'description')
-    readonly_fields = ('uuid',)
+    list_display = ('uuid', 'primary_color', 'voice_tone', 'font_body_family', 'archetype')
+    search_fields = ('voice_tone', 'keywords', 'description', 'archetype')
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
 
 
 @admin.register(Brand)
@@ -29,25 +30,39 @@ class BrandAdmin(admin.ModelAdmin):
 
 @admin.register(Creation)
 class CreationAdmin(admin.ModelAdmin):
-    list_display = ('uuid', 'title', 'post_type', 'status', 'user_id', 'brand', 'created_at')
+    list_display = ('uuid', 'title', 'post_type', 'status', 'brand', 'created_at')
     list_filter = ('status', 'post_type')
-    search_fields = ('title', 'original_prompt', 'user_id')
+    search_fields = ('title', 'post_tone', 'platforms')
     readonly_fields = ('uuid', 'created_at', 'updated_at')
 
 
 @admin.register(Generation)
 class GenerationAdmin(admin.ModelAdmin):
-    list_display = ('uuid', 'creation', 'media_type', 'status', 'parent', 'created_at')
-    list_filter = ('status', 'media_type')
-    search_fields = ('uuid', 'prompt')
+    list_display = ('uuid', 'creation', 'type', 'status', 'parent', 'created_at')
+    list_filter = ('status', 'type')
+    search_fields = ('uuid', 'prompt', 'content')
     readonly_fields = ('uuid', 'created_at')
+
+
+@admin.register(Preview)
+class PreviewAdmin(admin.ModelAdmin):
+    list_display = ('uuid', 'version_name', 'created_at')
+    search_fields = ('version_name', 'internal_notes')
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
+
+
+@admin.register(PreviewItem)
+class PreviewItemAdmin(admin.ModelAdmin):
+    list_display = ('uuid', 'preview', 'generation', 'position')
+    list_filter = ('preview',)
+    readonly_fields = ('uuid',)
 
 
 @admin.register(Post)
 class PostAdmin(admin.ModelAdmin):
-    list_display = ('uuid', 'brand', 'creation', 'status', 'user_id', 'scheduled_date', 'engagement_rate')
-    list_filter = ('status',)
-    search_fields = ('copy', 'user_id')
+    list_display = ('uuid', 'brand', 'status', 'user_id', 'scheduled_date', 'engagement_rate')
+    list_filter = ('status', 'post_type', 'platforms')
+    search_fields = ('final_copy', 'user_id')
     readonly_fields = ('uuid', 'created_at', 'updated_at')
 
 
@@ -56,16 +71,8 @@ class PlatformInsightAdmin(admin.ModelAdmin):
     list_display = ('uuid', 'brand', 'platform', 'date', 'followers', 'reach', 'engagement_rate')
     list_filter = ('platform',)
     search_fields = ('brand__name',)
-    readonly_fields = ('uuid',)
-    date_hierarchy = 'date'
-
-
-@admin.register(MediaFile)
-class MediaFileAdmin(admin.ModelAdmin):
-    list_display = ('uuid', 'generation', 'file_type', 'storage_provider', 'file_size', 'created_at')
-    list_filter = ('file_type', 'storage_provider')
-    search_fields = ('url',)
     readonly_fields = ('uuid', 'created_at')
+    date_hierarchy = 'date'
 
 
 @admin.register(TemplateDocument)

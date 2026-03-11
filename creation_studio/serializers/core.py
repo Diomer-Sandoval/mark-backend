@@ -4,14 +4,14 @@ Serializers for Core Creation Studio Models.
 Provides serializers for:
 - Brands and Brand DNA
 - Creations and Generations
+- Previews and Preview Items
 - Posts and Platform Insights
-- Media Files
 """
 
 from rest_framework import serializers
 from ..models import (
     Brand, BrandDNA, Creation, Generation,
-    Post, PlatformInsight, MediaFile
+    Preview, PreviewItem, Post, PlatformInsight
 )
 
 
@@ -29,7 +29,7 @@ class BrandDNASerializer(serializers.ModelSerializer):
         fields = [
             'uuid', 'primary_color', 'secondary_color', 'accent_color',
             'complementary_color', 'font_body_family', 'font_headings_family',
-            'voice_tone', 'keywords', 'description',
+            'voice_tone', 'keywords', 'description', 'archetype', 'target_audience',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
@@ -38,21 +38,6 @@ class BrandDNASerializer(serializers.ModelSerializer):
 class BrandDNACreateSerializer(serializers.ModelSerializer):
     """
     Serializer for creating BrandDNA.
-
-    Accepts raw extraction data and creates a BrandDNA record.
-
-    Example:
-        {
-            "primary_color": "#007AFF",
-            "secondary_color": "#FFFFFF",
-            "accent_color": "#FF9500",
-            "complementary_color": "#34C759",
-            "font_body_family": "Inter",
-            "font_headings_family": "Montserrat",
-            "voice_tone": "Professional, friendly, innovative",
-            "keywords": "technology, innovation, premium",
-            "description": "A modern tech brand focused on innovation"
-        }
     """
 
     class Meta:
@@ -60,7 +45,7 @@ class BrandDNACreateSerializer(serializers.ModelSerializer):
         fields = [
             'primary_color', 'secondary_color', 'accent_color',
             'complementary_color', 'font_body_family', 'font_headings_family',
-            'voice_tone', 'keywords', 'description'
+            'voice_tone', 'keywords', 'description', 'archetype', 'target_audience'
         ]
 
 
@@ -84,8 +69,6 @@ class BrandListSerializer(serializers.ModelSerializer):
 class BrandDetailSerializer(serializers.ModelSerializer):
     """
     Detailed serializer for Brand model.
-
-    Includes full BrandDNA nested serialization.
     """
 
     dna = BrandDNASerializer(read_only=True)
@@ -94,7 +77,7 @@ class BrandDetailSerializer(serializers.ModelSerializer):
         model = Brand
         fields = [
             'uuid', 'name', 'slug', 'page_url', 'logo_url',
-            'is_active', 'industry', 'user_id', 'dna',
+            'is_active', 'industry', 'user_id', 'tenant_id', 'dna',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
@@ -103,8 +86,6 @@ class BrandDetailSerializer(serializers.ModelSerializer):
 class BrandCreateSerializer(serializers.ModelSerializer):
     """
     Serializer for creating a new Brand.
-
-    Optionally accepts dna_data to create BrandDNA simultaneously.
     """
 
     dna_data = BrandDNACreateSerializer(required=False, write_only=True)
@@ -113,18 +94,16 @@ class BrandCreateSerializer(serializers.ModelSerializer):
         model = Brand
         fields = [
             'name', 'slug', 'page_url', 'logo_url',
-            'is_active', 'industry', 'user_id', 'dna_data'
+            'is_active', 'industry', 'user_id', 'tenant_id', 'dna_data'
         ]
 
     def create(self, validated_data):
         dna_data = validated_data.pop('dna_data', None)
 
-        # Create BrandDNA if data provided
         dna = None
         if dna_data:
             dna = BrandDNA.objects.create(**dna_data)
 
-        # Create Brand
         brand = Brand.objects.create(dna=dna, **validated_data)
         return brand
 
@@ -138,39 +117,7 @@ class BrandUpdateSerializer(serializers.ModelSerializer):
         model = Brand
         fields = [
             'name', 'slug', 'page_url', 'logo_url',
-            'is_active', 'industry', 'user_id'
-        ]
-
-
-# ============ Media File Serializers ============
-
-class MediaFileSerializer(serializers.ModelSerializer):
-    """
-    Serializer for MediaFile model.
-    """
-
-    generation_uuid = serializers.CharField(source='generation.uuid', read_only=True)
-
-    class Meta:
-        model = MediaFile
-        fields = [
-            'uuid', 'generation_uuid', 'url', 'file_type',
-            'file_size', 'width', 'height',
-            'storage_provider', 'created_at'
-        ]
-        read_only_fields = ['uuid', 'created_at']
-
-
-class MediaFileCreateSerializer(serializers.ModelSerializer):
-    """
-    Serializer for creating MediaFile.
-    """
-
-    class Meta:
-        model = MediaFile
-        fields = [
-            'generation', 'url', 'file_type',
-            'file_size', 'width', 'height', 'storage_provider'
+            'is_active', 'industry', 'user_id', 'tenant_id'
         ]
 
 
@@ -183,14 +130,12 @@ class GenerationListSerializer(serializers.ModelSerializer):
 
     creation_uuid = serializers.CharField(source='creation.uuid', read_only=True)
     parent_uuid = serializers.CharField(source='parent.uuid', read_only=True, default=None)
-    media_files = MediaFileSerializer(many=True, read_only=True)
 
     class Meta:
         model = Generation
         fields = [
             'uuid', 'creation_uuid', 'parent_uuid',
-            'media_type', 'status', 'prompt',
-            'media_files', 'created_at'
+            'type', 'status', 'prompt', 'content', 'created_at'
         ]
 
 
@@ -201,20 +146,17 @@ class GenerationDetailSerializer(serializers.ModelSerializer):
 
     creation_uuid = serializers.CharField(source='creation.uuid', read_only=True)
     parent_uuid = serializers.CharField(source='parent.uuid', read_only=True, default=None)
-    media_files = MediaFileSerializer(many=True, read_only=True)
     children = serializers.SerializerMethodField()
 
     class Meta:
         model = Generation
         fields = [
             'uuid', 'creation_uuid', 'parent_uuid',
-            'media_type', 'prompt', 'status',
-            'generation_params', 'media_files',
+            'type', 'prompt', 'status', 'content',
             'children', 'created_at'
         ]
 
     def get_children(self, obj):
-        """Get child generations (versions of this generation)."""
         children = obj.children.all()
         return GenerationListSerializer(children, many=True).data
 
@@ -227,19 +169,56 @@ class GenerationCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Generation
         fields = [
-            'creation', 'parent', 'media_type',
-            'prompt', 'status', 'generation_params'
+            'creation', 'parent', 'type',
+            'prompt', 'status', 'content'
         ]
 
 
 class GenerationUpdateSerializer(serializers.ModelSerializer):
     """
-    Serializer for updating Generation status.
+    Serializer for updating Generation.
     """
 
     class Meta:
         model = Generation
-        fields = ['status', 'prompt', 'generation_params']
+        fields = ['status', 'prompt', 'content']
+
+
+# ============ Preview Serializers ============
+
+class PreviewItemSerializer(serializers.ModelSerializer):
+    """
+    Serializer for PreviewItem model.
+    """
+    generation = GenerationListSerializer(read_only=True)
+    generation_uuid = serializers.PrimaryKeyRelatedField(
+        queryset=Generation.objects.all(), source='generation', write_only=True
+    )
+
+    class Meta:
+        model = PreviewItem
+        fields = ['uuid', 'generation', 'generation_uuid', 'position']
+
+
+class PreviewDetailSerializer(serializers.ModelSerializer):
+    """
+    Serializer for Preview model.
+    """
+    items = PreviewItemSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Preview
+        fields = ['uuid', 'version_name', 'internal_notes', 'items', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+
+
+class PreviewCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for creating a Preview.
+    """
+    class Meta:
+        model = Preview
+        fields = ['version_name', 'internal_notes']
 
 
 # ============ Post Serializers ============
@@ -250,12 +229,12 @@ class PostListSerializer(serializers.ModelSerializer):
     """
 
     brand_uuid = serializers.CharField(source='brand.uuid', read_only=True)
-    creation_uuid = serializers.CharField(source='creation.uuid', read_only=True, default=None)
+    preview_uuid = serializers.CharField(source='preview.uuid', read_only=True, default=None)
 
     class Meta:
         model = Post
         fields = [
-            'uuid', 'brand_uuid', 'creation_uuid',
+            'uuid', 'brand_uuid', 'preview_uuid',
             'status', 'scheduled_date', 'post_type',
             'platforms', 'created_at'
         ]
@@ -264,21 +243,19 @@ class PostListSerializer(serializers.ModelSerializer):
 class PostDetailSerializer(serializers.ModelSerializer):
     """
     Detailed serializer for Post model.
-
-    Includes full performance metrics.
     """
 
     brand_uuid = serializers.CharField(source='brand.uuid', read_only=True)
-    creation_uuid = serializers.CharField(source='creation.uuid', read_only=True, default=None)
+    preview = PreviewDetailSerializer(read_only=True)
 
     class Meta:
         model = Post
         fields = [
-            'uuid', 'brand_uuid', 'creation_uuid',
-            'copy', 'status', 'scheduled_date', 'executed_at',
+            'uuid', 'brand_uuid', 'user_id', 'preview',
+            'final_copy', 'status', 'scheduled_date', 'executed_at',
             'post_type', 'platforms',
             'likes', 'comments', 'shares', 'reach', 'engagement_rate',
-            'metrics', 'created_at', 'updated_at'
+            'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
 
@@ -291,7 +268,7 @@ class PostCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Post
         fields = [
-            'brand', 'creation', 'copy', 'status',
+            'brand', 'user_id', 'preview', 'final_copy', 'status',
             'scheduled_date', 'post_type', 'platforms'
         ]
 
@@ -299,17 +276,25 @@ class PostCreateSerializer(serializers.ModelSerializer):
 class PostUpdateSerializer(serializers.ModelSerializer):
     """
     Serializer for updating Post.
-
-    Allows updating content and metrics.
     """
 
     class Meta:
         model = Post
         fields = [
-            'copy', 'status', 'scheduled_date', 'executed_at',
+            'final_copy', 'status', 'scheduled_date', 'executed_at',
             'likes', 'comments', 'shares', 'reach',
-            'engagement_rate', 'metrics'
+            'engagement_rate'
         ]
+
+
+class PostMetricsUpdateSerializer(serializers.Serializer):
+    """
+    Serializer for updating post metrics.
+    """
+    likes = serializers.IntegerField(required=False)
+    comments = serializers.IntegerField(required=False)
+    shares = serializers.IntegerField(required=False)
+    reach = serializers.IntegerField(required=False)
 
 
 # ============ Platform Insight Serializers ============
@@ -328,7 +313,7 @@ class PlatformInsightSerializer(serializers.ModelSerializer):
             'uuid', 'brand_uuid', 'brand_name',
             'platform', 'date', 'followers',
             'impressions', 'reach', 'engagement_rate',
-            'metrics', 'created_at'
+            'created_at'
         ]
         read_only_fields = ['uuid', 'created_at']
 
@@ -342,24 +327,24 @@ class PlatformInsightCreateSerializer(serializers.ModelSerializer):
         model = PlatformInsight
         fields = [
             'brand', 'platform', 'date', 'followers',
-            'impressions', 'reach', 'engagement_rate', 'metrics'
+            'impressions', 'reach', 'engagement_rate'
         ]
 
 
 class PlatformInsightBulkCreateSerializer(serializers.Serializer):
     """
-    Serializer for bulk creating PlatformInsight records.
+    Serializer for bulk creating PlatformInsights.
     """
-
+    brand = serializers.PrimaryKeyRelatedField(queryset=Brand.objects.all())
     insights = PlatformInsightCreateSerializer(many=True)
 
     def create(self, validated_data):
-        insights_data = validated_data.get('insights', [])
-        created = []
-        for insight_data in insights_data:
-            insight = PlatformInsight.objects.create(**insight_data)
-            created.append(insight)
-        return {'insights': created}
+        brand = validated_data['brand']
+        insights_data = validated_data['insights']
+        insights = []
+        for data in insights_data:
+            insights.append(PlatformInsight.objects.create(brand=brand, **data))
+        return {'insights': insights}
 
 
 # ============ Creation Serializers ============
@@ -388,22 +373,18 @@ class CreationListSerializer(serializers.ModelSerializer):
 class CreationDetailSerializer(serializers.ModelSerializer):
     """
     Detailed serializer for Creation model.
-
-    Includes nested generations and brand info.
     """
 
     brand_uuid = serializers.CharField(source='brand.uuid', read_only=True)
     brand_name = serializers.CharField(source='brand.name', read_only=True)
     generations = GenerationListSerializer(many=True, read_only=True)
-    posts = PostListSerializer(many=True, read_only=True)
 
     class Meta:
         model = Creation
         fields = [
             'uuid', 'brand_uuid', 'brand_name', 'title',
             'post_type', 'status', 'platforms', 'post_tone',
-            'original_prompt', 'research_data',
-            'generations', 'posts',
+            'generations',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
@@ -418,7 +399,7 @@ class CreationCreateSerializer(serializers.ModelSerializer):
         model = Creation
         fields = [
             'brand', 'title', 'post_type', 'status',
-            'platforms', 'post_tone', 'original_prompt'
+            'platforms', 'post_tone'
         ]
 
 
@@ -431,30 +412,5 @@ class CreationUpdateSerializer(serializers.ModelSerializer):
         model = Creation
         fields = [
             'title', 'post_type', 'status',
-            'platforms', 'post_tone', 'original_prompt', 'research_data'
+            'platforms', 'post_tone'
         ]
-
-
-# ============ Request/Input Serializers ============
-
-class CreationSearchRequestSerializer(serializers.Serializer):
-    """
-    Serializer for creation search/filter request.
-    """
-
-    brand_uuid = serializers.CharField(required=False)
-    status = serializers.CharField(required=False)
-    post_type = serializers.CharField(required=False)
-    search = serializers.CharField(required=False, help_text="Search in title")
-
-
-class PostMetricsUpdateSerializer(serializers.Serializer):
-    """
-    Serializer for updating post metrics.
-    """
-
-    likes = serializers.IntegerField(required=False, min_value=0)
-    comments = serializers.IntegerField(required=False, min_value=0)
-    shares = serializers.IntegerField(required=False, min_value=0)
-    reach = serializers.IntegerField(required=False, min_value=0)
-    engagement_rate = serializers.FloatField(required=False, min_value=0)

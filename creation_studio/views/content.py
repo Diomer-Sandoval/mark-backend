@@ -1,6 +1,4 @@
-import json
-import random
-import string
+import uuid as _uuid_lib
 from datetime import datetime, timezone
 
 from django.http import JsonResponse
@@ -39,6 +37,8 @@ _ASPECT_RATIO_MAP = {
     "youtube": "16:9",
 }
 
+_VALID_TYPES = ["image", "edit_image", "edit_copy", "carousel", "edit_carousel_slide", "video"]
+
 
 def _resolve_logo(body: dict) -> tuple[str, str]:
     """Return (logo_base64, logo_mime_type) from request body.
@@ -55,7 +55,11 @@ def _resolve_logo(body: dict) -> tuple[str, str]:
         try:
             import urllib.request
             import base64
-            with urllib.request.urlopen(logo_url, timeout=10) as resp:
+            import ssl
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            with urllib.request.urlopen(logo_url, timeout=10, context=ctx) as resp:
                 raw = resp.read()
                 content_type = resp.headers.get("Content-Type", "image/png").split(";")[0]
                 return base64.b64encode(raw).decode(), content_type
@@ -65,103 +69,15 @@ def _resolve_logo(body: dict) -> tuple[str, str]:
     return "", "image/png"
 
 
-def _make_uuid(length: int = 17) -> str:
-    chars = string.ascii_letters + string.digits
-    return "".join(random.choices(chars, k=length))
+def _make_uuid() -> str:
+    return str(_uuid_lib.uuid4())
 
 
 # ---------------------------------------------------------------------------
-# Shared inline serializer fields
+# Private handlers — one per content type
 # ---------------------------------------------------------------------------
 
-_brand_dna_field = serializers.DictField(
-    child=serializers.CharField(),
-    help_text="Brand DNA object (colors, typography, voice_tone, keywords, etc.)",
-    required=False,
-)
-
-_identity_field = serializers.DictField(
-    child=serializers.CharField(),
-    help_text="Brand identity object (name, logo_url, etc.)",
-    required=False,
-)
-
-_logo_fields = {
-    "logo_base64": serializers.CharField(
-        required=False,
-        help_text="Base64-encoded logo image (takes priority over logo_url)",
-    ),
-    "logo_mime_type": serializers.CharField(
-        required=False,
-        default="image/png",
-        help_text="MIME type of the base64 logo (e.g. image/png, image/svg+xml)",
-    ),
-    "logo_url": serializers.URLField(
-        required=False,
-        help_text="Public URL of the logo (used when logo_base64 is not provided)",
-    ),
-}
-
-
-# ---------------------------------------------------------------------------
-# generate_content — POST /api/content/generate-image/
-# ---------------------------------------------------------------------------
-
-@extend_schema(
-    tags=["Content Generation"],
-    summary="Generate an AI image + copy for a social media post",
-    description=(
-        "Runs the create-post LangGraph agent to produce a platform-optimised image "
-        "and marketing copy based on the supplied prompt, brand DNA, and identity."
-    ),
-    request=inline_serializer(
-        name="GenerateContentRequest",
-        fields={
-            "prompt": serializers.CharField(help_text="Creative brief / topic for the post"),
-            "platforms": serializers.ListField(
-                child=serializers.CharField(),
-                default=["instagram"],
-                help_text="Target social platforms (e.g. ['instagram', 'linkedin'])",
-            ),
-            "post_type": serializers.CharField(default="post", required=False),
-            "post_tone": serializers.CharField(default="promotional", required=False),
-            "brand_dna": _brand_dna_field,
-            "identity": _identity_field,
-            **_logo_fields,
-        },
-    ),
-    responses={
-        200: OpenApiResponse(
-            response=inline_serializer(
-                name="GenerateContentResponse",
-                fields={
-                    "uuid": serializers.CharField(help_text="Creation UUID"),
-                    "copy": serializers.CharField(help_text="Generated marketing copy"),
-                    "image_url": serializers.URLField(help_text="URL of the generated image"),
-                },
-            ),
-            description="Image and copy generated successfully",
-            examples=[
-                OpenApiExample(
-                    "Success",
-                    value={
-                        "uuid": "aBcDeFgHiJkLmNo1",
-                        "copy": "Feel the difference. #Nike #JustDoIt",
-                        "image_url": "https://res.cloudinary.com/demo/image/upload/sample.jpg",
-                    },
-                )
-            ],
-        ),
-        500: OpenApiResponse(description="Agent error"),
-    },
-)
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def generate_content(request):
-    try:
-        body = request.data
-    except Exception as e:
-        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
+def _handle_image(body: dict) -> JsonResponse:
     now = datetime.now(timezone.utc).isoformat()
     creation_uuid = _make_uuid()
 
@@ -223,75 +139,15 @@ def generate_content(request):
 
     strategy_raw = result.get("strategy", "")
     if "---" in strategy_raw:
-        strategy_part, copy_part = strategy_raw.split("---", 1)
-        strategy_part = strategy_part.strip()
+        _, copy_part = strategy_raw.split("---", 1)
         copy_part = copy_part.strip()
     else:
-        strategy_part = strategy_raw
-        copy_part = ""
+        copy_part = strategy_raw
 
-    return JsonResponse(
-        {
-            "uuid": creation_uuid,
-            "copy": copy_part,
-            "image_url": image_url,
-        }
-    )
+    return JsonResponse({"uuid": creation_uuid, "copy": copy_part, "image_url": image_url})
 
 
-# ---------------------------------------------------------------------------
-# regenerate_copy — POST /api/content/edit-copy/
-# ---------------------------------------------------------------------------
-
-@extend_schema(
-    tags=["Content Generation"],
-    summary="Regenerate marketing copy with optional feedback",
-    description=(
-        "Re-runs the copywriter agent to produce revised copy for an existing creation, "
-        "optionally incorporating user feedback on the previous version."
-    ),
-    request=inline_serializer(
-        name="RegenerateCopyRequest",
-        fields={
-            "creation_uuid": serializers.CharField(help_text="UUID of the existing creation"),
-            "prompt": serializers.CharField(help_text="Original creative brief"),
-            "current_copy": serializers.CharField(required=False, help_text="Copy to be revised"),
-            "copy_feedback": serializers.CharField(required=False, help_text="User feedback on current copy"),
-            "platforms": serializers.ListField(child=serializers.CharField(), default=["instagram"]),
-            "post_type": serializers.CharField(default="post", required=False),
-            "post_tone": serializers.CharField(default="promotional", required=False),
-            "brand_dna": _brand_dna_field,
-            "identity": _identity_field,
-        },
-    ),
-    responses={
-        200: OpenApiResponse(
-            response=inline_serializer(
-                name="RegenerateCopyResponse",
-                fields={
-                    "uuid": serializers.CharField(),
-                    "copy": serializers.CharField(),
-                },
-            ),
-            description="Copy regenerated successfully",
-            examples=[
-                OpenApiExample(
-                    "Success",
-                    value={"uuid": "aBcDeFgHiJkLmNo1", "copy": "Elevate your game. #Nike"},
-                )
-            ],
-        ),
-        500: OpenApiResponse(description="Agent error"),
-    },
-)
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def regenerate_copy(request):
-    try:
-        body = request.data
-    except Exception as e:
-        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
-
+def _handle_edit_copy(body: dict) -> JsonResponse:
     creation_uuid = body.get("creation_uuid", "")
     platforms = body.get("platforms", ["instagram"])
     brand_dna = {k: v for k, v in body.get("brand_dna", {}).items() if k != "typography"}
@@ -332,61 +188,12 @@ def regenerate_copy(request):
     return JsonResponse({"uuid": creation_uuid, "copy": copy_part})
 
 
-# ---------------------------------------------------------------------------
-# edit_image — POST /api/content/edit-image/
-# ---------------------------------------------------------------------------
-
-@extend_schema(
-    tags=["Content Generation"],
-    summary="Edit an existing generated image",
-    description=(
-        "Runs the edit-image LangGraph agent to apply the provided prompt as an edit "
-        "instruction to an existing image identified by its URL."
-    ),
-    request=inline_serializer(
-        name="EditImageRequest",
-        fields={
-            "creation_uuid": serializers.CharField(help_text="UUID of the parent creation"),
-            "uuid": serializers.CharField(help_text="UUID of the generation to edit (parent_uuid)"),
-            "prompt": serializers.CharField(help_text="Edit instruction (e.g. 'make the background blue')"),
-            "img_url": serializers.URLField(help_text="URL of the image to edit"),
-        },
-    ),
-    responses={
-        200: OpenApiResponse(
-            response=inline_serializer(
-                name="EditImageResponse",
-                fields={
-                    "status": serializers.CharField(),
-                    "message": serializers.CharField(),
-                    "img_url": serializers.URLField(),
-                },
-            ),
-            description="Image edited successfully",
-            examples=[
-                OpenApiExample(
-                    "Success",
-                    value={
-                        "status": "ok",
-                        "message": "Image edited successfully",
-                        "img_url": "https://res.cloudinary.com/demo/image/upload/edited.jpg",
-                    },
-                )
-            ],
-        ),
-        500: OpenApiResponse(description="Agent error"),
-    },
-)
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def edit_image(request):
-    body = request.data
-    now = datetime.now(timezone.utc).isoformat()
-
+def _handle_edit_image(body: dict) -> JsonResponse:
     creation_uuid = body.get("creation_uuid", "")
     parent_uuid = body.get("uuid", "")
     prompt = body.get("prompt", "")
     img_url = body.get("img_url", "")
+    now = datetime.now(timezone.utc).isoformat()
 
     update_creation(creation_uuid, {
         "status": "pending",
@@ -422,86 +229,10 @@ def edit_image(request):
 
     update_creation(creation_uuid, {"status": "active", "update_at": done_at})
 
-    return JsonResponse({
-        "status": "ok",
-        "message": "Image edited successfully",
-        "img_url": result_url,
-    })
+    return JsonResponse({"status": "ok", "message": "Image edited successfully", "img_url": result_url})
 
 
-# ---------------------------------------------------------------------------
-# generate_carousel — POST /api/content/generate-carousel/
-# ---------------------------------------------------------------------------
-
-@extend_schema(
-    tags=["Content Generation"],
-    summary="Generate a multi-slide carousel",
-    description=(
-        "Runs the create-carousel LangGraph agent to produce a set of branded slide images "
-        "with headlines, caption, and hashtags for the requested platform."
-    ),
-    request=inline_serializer(
-        name="GenerateCarouselRequest",
-        fields={
-            "topic": serializers.CharField(help_text="Topic / creative brief for the carousel"),
-            "platform": serializers.CharField(default="instagram", required=False),
-            "post_tone": serializers.CharField(default="educational", required=False),
-            "num_slides": serializers.IntegerField(
-                default=7,
-                required=False,
-                help_text="Number of slides (clamped to 5–10)",
-            ),
-            "brand_dna": _brand_dna_field,
-            "identity": _identity_field,
-            **_logo_fields,
-        },
-    ),
-    responses={
-        200: OpenApiResponse(
-            response=inline_serializer(
-                name="GenerateCarouselResponse",
-                fields={
-                    "uuid": serializers.CharField(),
-                    "slides": serializers.ListField(
-                        child=serializers.DictField(),
-                        help_text="List of slide objects (index, headline, image_url, qc_passed, qc_attempts)",
-                    ),
-                    "caption": serializers.CharField(),
-                    "hashtags": serializers.ListField(child=serializers.CharField()),
-                },
-            ),
-            description="Carousel generated successfully",
-            examples=[
-                OpenApiExample(
-                    "Success",
-                    value={
-                        "uuid": "aBcDeFgHiJkLmNo1",
-                        "slides": [
-                            {
-                                "index": 0,
-                                "headline": "5 Tips to Boost Your Brand",
-                                "image_url": "https://res.cloudinary.com/demo/image/upload/slide0.jpg",
-                                "qc_passed": True,
-                                "qc_attempts": 1,
-                            }
-                        ],
-                        "caption": "Boost your brand with these 5 actionable tips!",
-                        "hashtags": ["#Branding", "#Marketing"],
-                    },
-                )
-            ],
-        ),
-        500: OpenApiResponse(description="Agent error"),
-    },
-)
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def generate_carousel(request):
-    try:
-        body = request.data
-    except Exception as e:
-        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
-
+def _handle_carousel(body: dict) -> JsonResponse:
     now = datetime.now(timezone.utc).isoformat()
     creation_uuid = _make_uuid()
 
@@ -511,7 +242,6 @@ def generate_carousel(request):
     num_slides = max(5, min(10, int(body.get("num_slides", 7))))
     brand_dna = body.get("brand_dna", {})
     identity = body.get("identity", {})
-
     logo_base64, logo_mime_type = _resolve_logo(body)
 
     create_creation(
@@ -573,87 +303,21 @@ def generate_carousel(request):
 
     update_creation(creation_uuid, {"status": "active", "update_at": done_at})
 
-    return JsonResponse(
-        {
-            "uuid": creation_uuid,
-            "slides": completed_slides,
-            "caption": result.get("caption", ""),
-            "hashtags": result.get("hashtags", []),
-        }
-    )
+    return JsonResponse({
+        "uuid": creation_uuid,
+        "slides": completed_slides,
+        "caption": result.get("caption", ""),
+        "hashtags": result.get("hashtags", []),
+    })
 
 
-# ---------------------------------------------------------------------------
-# edit_carousel_slide — POST /api/content/edit-carousel-slide/
-# ---------------------------------------------------------------------------
-
-@extend_schema(
-    tags=["Content Generation"],
-    summary="Re-generate a single carousel slide",
-    description=(
-        "Re-runs image generation for one slide of an existing carousel, optionally "
-        "incorporating user feedback. Includes QC validation with automatic retries."
-    ),
-    request=inline_serializer(
-        name="EditCarouselSlideRequest",
-        fields={
-            "creation_uuid": serializers.CharField(help_text="UUID of the parent carousel creation"),
-            "slide": serializers.DictField(
-                help_text="Slide object: {index, headline, body, visual_description}"
-            ),
-            "visual_theme": serializers.CharField(required=False, help_text="Visual theme override"),
-            "brand_dna": _brand_dna_field,
-            "platform": serializers.CharField(default="instagram", required=False),
-            "feedback": serializers.CharField(required=False, help_text="User feedback on the previous image"),
-            **_logo_fields,
-        },
-    ),
-    responses={
-        200: OpenApiResponse(
-            response=inline_serializer(
-                name="EditCarouselSlideResponse",
-                fields={
-                    "uuid": serializers.CharField(),
-                    "slide": serializers.DictField(
-                        help_text="Updated slide: {index, headline, image_url, qc_passed, qc_attempts}"
-                    ),
-                },
-            ),
-            description="Slide regenerated successfully",
-            examples=[
-                OpenApiExample(
-                    "Success",
-                    value={
-                        "uuid": "aBcDeFgHiJkLmNo1",
-                        "slide": {
-                            "index": 2,
-                            "headline": "Step 3: Consistency",
-                            "image_url": "https://res.cloudinary.com/demo/image/upload/slide2.jpg",
-                            "qc_passed": True,
-                            "qc_attempts": 2,
-                        },
-                    },
-                )
-            ],
-        ),
-        500: OpenApiResponse(description="Generation or upload error"),
-    },
-)
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def edit_carousel_slide(request):
-    try:
-        body = request.data
-    except Exception as e:
-        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
-
+def _handle_edit_carousel_slide(body: dict) -> JsonResponse:
     creation_uuid = body.get("creation_uuid", "")
     slide = body.get("slide", {})
     visual_theme = body.get("visual_theme", "")
     brand_dna = body.get("brand_dna", {})
     platform = body.get("platform", "instagram")
     feedback = body.get("feedback", "")
-
     logo_base64, logo_mime_type = _resolve_logo(body)
 
     now = datetime.now(timezone.utc).isoformat()
@@ -741,88 +405,7 @@ def edit_carousel_slide(request):
     return JsonResponse({"uuid": creation_uuid, "slide": slide_result})
 
 
-# ---------------------------------------------------------------------------
-# generate_video — POST /api/content/generate-video/
-# ---------------------------------------------------------------------------
-
-@extend_schema(
-    tags=["Content Generation"],
-    summary="Generate a multi-scene video",
-    description=(
-        "Runs the create-video LangGraph agent to produce a set of branded video scenes "
-        "with caption and hashtags for the requested platform."
-    ),
-    request=inline_serializer(
-        name="GenerateVideoRequest",
-        fields={
-            "topic": serializers.CharField(help_text="Topic / creative brief for the video"),
-            "platform": serializers.ChoiceField(
-                choices=["Instagram Reels", "TikTok", "YouTube Shorts", "LinkedIn", "Facebook", "YouTube"],
-                default="Instagram Reels",
-                required=False,
-            ),
-            "video_tone": serializers.CharField(default="General", required=False),
-            "num_scenes": serializers.IntegerField(
-                default=4,
-                required=False,
-                help_text="Number of scenes (clamped to 3–6)",
-            ),
-            "scene_duration": serializers.ChoiceField(
-                choices=[5, 6, 8],
-                default=6,
-                required=False,
-                help_text="Duration per scene in seconds (5, 6, or 8)",
-            ),
-            "brand_dna": _brand_dna_field,
-            "identity": _identity_field,
-            **_logo_fields,
-        },
-    ),
-    responses={
-        200: OpenApiResponse(
-            response=inline_serializer(
-                name="GenerateVideoResponse",
-                fields={
-                    "uuid": serializers.CharField(),
-                    "scenes": serializers.ListField(
-                        child=serializers.DictField(),
-                        help_text="List of scene objects (scene_number, type, video_url, filtered)",
-                    ),
-                    "caption": serializers.CharField(),
-                    "hashtags": serializers.ListField(child=serializers.CharField()),
-                },
-            ),
-            description="Video scenes generated successfully",
-            examples=[
-                OpenApiExample(
-                    "Success",
-                    value={
-                        "uuid": "aBcDeFgHiJkLmNo1",
-                        "scenes": [
-                            {
-                                "scene_number": 1,
-                                "type": "value",
-                                "video_url": "https://res.cloudinary.com/demo/video/upload/scene1.mp4",
-                                "filtered": False,
-                            }
-                        ],
-                        "caption": "Discover the future of marketing.",
-                        "hashtags": ["#Marketing", "#AI"],
-                    },
-                )
-            ],
-        ),
-        500: OpenApiResponse(description="Agent error"),
-    },
-)
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def generate_video(request):
-    try:
-        body = request.data
-    except Exception as e:
-        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
-
+def _handle_video(body: dict) -> JsonResponse:
     now = datetime.now(timezone.utc).isoformat()
     creation_uuid = _make_uuid()
 
@@ -836,7 +419,6 @@ def generate_video(request):
     brand_dna = body.get("brand_dna", {})
     identity = body.get("identity", {})
     aspect_ratio = _ASPECT_RATIO_MAP.get(platform.lower(), "9:16")
-
     logo_base64, logo_mime_type = _resolve_logo(body)
 
     create_creation(
@@ -901,11 +483,259 @@ def generate_video(request):
 
     update_creation(creation_uuid, {"status": "active", "update_at": done_at})
 
-    return JsonResponse(
-        {
-            "uuid": creation_uuid,
-            "scenes": completed_scenes,
-            "caption": result.get("caption", ""),
-            "hashtags": result.get("hashtags", []),
-        }
-    )
+    return JsonResponse({
+        "uuid": creation_uuid,
+        "scenes": completed_scenes,
+        "caption": result.get("caption", ""),
+        "hashtags": result.get("hashtags", []),
+    })
+
+
+# ---------------------------------------------------------------------------
+# Unified dispatcher — POST /api/generations/
+# ---------------------------------------------------------------------------
+
+_HANDLERS = {
+    "image": _handle_image,
+    "edit_image": _handle_edit_image,
+    "edit_copy": _handle_edit_copy,
+    "carousel": _handle_carousel,
+    "edit_carousel_slide": _handle_edit_carousel_slide,
+    "video": _handle_video,
+}
+
+_brand_dna_field = serializers.DictField(
+    child=serializers.CharField(),
+    help_text="Brand DNA object (colors, typography, voice_tone, keywords, etc.)",
+    required=False,
+)
+
+_identity_field = serializers.DictField(
+    child=serializers.CharField(),
+    help_text="Brand identity object (name, logo_url, etc.)",
+    required=False,
+)
+
+
+@extend_schema(
+    tags=["Generations"],
+    summary="Unified content generation endpoint",
+    description=(
+        "Single endpoint that dispatches to the correct AI generation pipeline based on the `type` field.\n\n"
+        "**Available types:**\n\n"
+        "| type | Description |\n"
+        "|------|-------------|\n"
+        "| `image` | Generate an AI image + marketing copy for a social post |\n"
+        "| `edit_image` | Edit an existing generated image with a text prompt |\n"
+        "| `edit_copy` | Regenerate marketing copy with optional user feedback |\n"
+        "| `carousel` | Generate a multi-slide branded carousel (5–10 slides) |\n"
+        "| `edit_carousel_slide` | Regenerate a single carousel slide with QC validation |\n"
+        "| `video` | Generate a multi-scene branded video (3–6 scenes) |\n\n"
+        "---\n\n"
+        "### `type: image`\n"
+        "```json\n"
+        '{"type":"image","prompt":"...","platforms":["instagram"],"post_type":"post","post_tone":"promotional","brand_dna":{},"identity":{}}\n'
+        "```\n"
+        "Response: `{uuid, copy, image_url}`\n\n"
+        "### `type: edit_image`\n"
+        "```json\n"
+        '{"type":"edit_image","creation_uuid":"...","uuid":"...","prompt":"make background blue","img_url":"..."}\n'
+        "```\n"
+        "Response: `{status, message, img_url}`\n\n"
+        "### `type: edit_copy`\n"
+        "```json\n"
+        '{"type":"edit_copy","creation_uuid":"...","prompt":"...","current_copy":"...","copy_feedback":"...","brand_dna":{}}\n'
+        "```\n"
+        "Response: `{uuid, copy}`\n\n"
+        "### `type: carousel`\n"
+        "```json\n"
+        '{"type":"carousel","topic":"...","platform":"instagram","post_tone":"educational","num_slides":7,"brand_dna":{}}\n'
+        "```\n"
+        "Response: `{uuid, slides, caption, hashtags}`\n\n"
+        "### `type: edit_carousel_slide`\n"
+        "```json\n"
+        '{"type":"edit_carousel_slide","creation_uuid":"...","slide":{...},"brand_dna":{},"feedback":"..."}\n'
+        "```\n"
+        "Response: `{uuid, slide}`\n\n"
+        "### `type: video`\n"
+        "```json\n"
+        '{"type":"video","topic":"...","platform":"Instagram Reels","video_tone":"General","num_scenes":4,"scene_duration":6,"brand_dna":{}}\n'
+        "```\n"
+        "Response: `{uuid, scenes, caption, hashtags}`\n"
+    ),
+    request=inline_serializer(
+        name="GenerateRequest",
+        fields={
+            "type": serializers.ChoiceField(
+                choices=_VALID_TYPES,
+                help_text="Content type to generate",
+            ),
+            # ── image / edit_copy fields ──
+            "prompt": serializers.CharField(required=False, help_text="Creative brief or edit instruction"),
+            "platforms": serializers.ListField(
+                child=serializers.CharField(),
+                required=False,
+                default=["instagram"],
+                help_text="Target platforms (image / edit_copy)",
+            ),
+            "post_type": serializers.CharField(required=False, default="post"),
+            "post_tone": serializers.CharField(required=False, default="promotional"),
+            # ── edit_image / edit_copy fields ──
+            "creation_uuid": serializers.CharField(required=False, help_text="UUID of the parent creation (edit types)"),
+            "uuid": serializers.CharField(required=False, help_text="Generation UUID to edit (edit_image)"),
+            "img_url": serializers.URLField(required=False, help_text="URL of the image to edit (edit_image)"),
+            "current_copy": serializers.CharField(required=False, help_text="Existing copy to revise (edit_copy)"),
+            "copy_feedback": serializers.CharField(required=False, help_text="User feedback on current copy (edit_copy)"),
+            # ── carousel fields ──
+            "topic": serializers.CharField(required=False, help_text="Topic / brief (carousel / video)"),
+            "platform": serializers.CharField(required=False, help_text="Target platform (carousel / video)"),
+            "num_slides": serializers.IntegerField(required=False, default=7, help_text="Slides count 5–10 (carousel)"),
+            # ── edit_carousel_slide fields ──
+            "slide": serializers.DictField(required=False, help_text="Slide object {index, headline, body, visual_description}"),
+            "visual_theme": serializers.CharField(required=False, help_text="Visual theme override (edit_carousel_slide)"),
+            "feedback": serializers.CharField(required=False, help_text="User feedback on the previous slide image"),
+            # ── video fields ──
+            "video_tone": serializers.CharField(required=False, default="General"),
+            "num_scenes": serializers.IntegerField(required=False, default=4, help_text="Scene count 3–6 (video)"),
+            "scene_duration": serializers.ChoiceField(
+                choices=[5, 6, 8], required=False, default=6,
+                help_text="Seconds per scene — 5, 6 or 8 (video)",
+            ),
+            # ── shared brand fields ──
+            "brand_dna": _brand_dna_field,
+            "identity": _identity_field,
+            "logo_base64": serializers.CharField(required=False, help_text="Base64-encoded logo image"),
+            "logo_mime_type": serializers.CharField(required=False, default="image/png"),
+            "logo_url": serializers.URLField(required=False, help_text="Public URL of the logo"),
+        },
+    ),
+    responses={
+        200: OpenApiResponse(description="Generation completed — shape depends on `type`"),
+        400: OpenApiResponse(description="Missing or invalid `type`"),
+        500: OpenApiResponse(description="Agent/pipeline error"),
+    },
+    examples=[
+        OpenApiExample(
+            "Generate image",
+            request_only=True,
+            value={
+                "type": "image",
+                "prompt": "Nike running shoes campaign for summer",
+                "platforms": ["instagram"],
+                "post_type": "post",
+                "post_tone": "promotional",
+                "brand_dna": {"primary_color": "#FF0000", "voice_tone": "energetic"},
+                "identity": {"name": "Nike", "logo_url": "https://example.com/nike.png"},
+            },
+        ),
+        OpenApiExample(
+            "Generate carousel",
+            request_only=True,
+            value={
+                "type": "carousel",
+                "topic": "5 tips to boost your brand on Instagram",
+                "platform": "instagram",
+                "post_tone": "educational",
+                "num_slides": 7,
+                "brand_dna": {"primary_color": "#0055FF"},
+            },
+        ),
+        OpenApiExample(
+            "Generate video",
+            request_only=True,
+            value={
+                "type": "video",
+                "topic": "Product launch teaser",
+                "platform": "Instagram Reels",
+                "video_tone": "Exciting",
+                "num_scenes": 4,
+                "scene_duration": 6,
+            },
+        ),
+        OpenApiExample(
+            "Edit image",
+            request_only=True,
+            value={
+                "type": "edit_image",
+                "creation_uuid": "abc123",
+                "uuid": "gen456",
+                "prompt": "Make the background gradient blue to purple",
+                "img_url": "https://res.cloudinary.com/demo/image/upload/sample.jpg",
+            },
+        ),
+        OpenApiExample(
+            "Edit copy",
+            request_only=True,
+            value={
+                "type": "edit_copy",
+                "creation_uuid": "abc123",
+                "prompt": "Summer campaign brief",
+                "current_copy": "Feel the heat this summer.",
+                "copy_feedback": "Make it more energetic and add a CTA",
+            },
+        ),
+    ],
+)
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def generate(request):
+    try:
+        body = request.data
+    except Exception as e:
+        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
+
+    content_type = body.get("type")
+    if not content_type:
+        return JsonResponse(
+            {"error": f"'type' is required. Valid values: {_VALID_TYPES}"},
+            status=400,
+        )
+
+    handler = _HANDLERS.get(content_type)
+    if handler is None:
+        return JsonResponse(
+            {"error": f"Unknown type '{content_type}'. Valid values: {_VALID_TYPES}"},
+            status=400,
+        )
+
+    return handler(body)
+
+
+# ---------------------------------------------------------------------------
+# Legacy named views — kept for any internal references; no longer routed
+# ---------------------------------------------------------------------------
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def generate_content(request):
+    return _handle_image(request.data)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def regenerate_copy(request):
+    return _handle_edit_copy(request.data)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def edit_image(request):
+    return _handle_edit_image(request.data)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def generate_carousel(request):
+    return _handle_carousel(request.data)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def edit_carousel_slide(request):
+    return _handle_edit_carousel_slide(request.data)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def generate_video(request):
+    return _handle_video(request.data)

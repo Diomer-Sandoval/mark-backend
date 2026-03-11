@@ -1,14 +1,8 @@
-import random
-import string
+import uuid as _uuid_lib
 
 from ...state import ContentPipelineState
 from ....utils.gemini_utils import generate_image
 from ....utils.cloudinary_utils import upload_image
-
-
-def _make_uuid(length: int = 17) -> str:
-    chars = string.ascii_letters + string.digits
-    return "".join(random.choices(chars, k=length))
 
 
 def generate_image_node(state: ContentPipelineState) -> dict:
@@ -16,7 +10,7 @@ def generate_image_node(state: ContentPipelineState) -> dict:
     if not image_base64:
         return {"image_url": "", "generation_uuid": ""}
 
-    generation_uuid = _make_uuid()
+    generation_uuid = str(_uuid_lib.uuid4())
     creation_uuid = state.get("creation_uuid", "")
 
     image_url = upload_image(

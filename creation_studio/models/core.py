@@ -5,7 +5,6 @@ This module provides models for managing:
 - Brands and Brand DNA
 - Content Creations and Generations
 - Posts and Platform Insights
-- Media Files
 """
 
 import uuid
@@ -116,8 +115,9 @@ class BrandDNA(models.Model):
     keywords = models.TextField(blank=True, help_text="Comma-separated brand keywords")
     description = models.TextField(blank=True, help_text="Brand description and positioning")
 
-    # Raw extraction data (for reference)
-    raw_data = models.JSONField(default=dict, blank=True)
+    # Brand strategy
+    archetype = models.CharField(max_length=100, blank=True, help_text="Brand archetype")
+    target_audience = models.CharField(max_length=255, blank=True, help_text="Target audience description")
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -166,16 +166,9 @@ class Creation(models.Model):
         Brand,
         on_delete=models.CASCADE,
         related_name='creations',
-        db_column='brand_uuid'
-    )
-
-    # SIA Solutions integration - track who created this
-    user_id = models.CharField(
-        max_length=36,
+        db_column='brand_uuid',
         null=True,
         blank=True,
-        db_index=True,
-        help_text="SIA User UUID who created this project"
     )
 
     # Creation details
@@ -188,12 +181,6 @@ class Creation(models.Model):
         help_text="Comma-separated platforms (e.g., instagram, tiktok)"
     )
     post_tone = models.CharField(max_length=50, blank=True, help_text="Desired emotional impact")
-
-    # Original prompt/intent
-    original_prompt = models.TextField(blank=True)
-
-    # Research data (stored as JSON)
-    research_data = models.JSONField(default=dict, blank=True)
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -233,9 +220,10 @@ class Generation(models.Model):
         ('failed', 'Failed'),
     ]
 
-    MEDIA_TYPE_CHOICES = [
+    TYPE_CHOICES = [
         ('image', 'Image'),
         ('video', 'Video'),
+        ('copy', 'Copy'),
     ]
 
     uuid = models.UUIDField(
@@ -262,12 +250,10 @@ class Generation(models.Model):
     )
 
     # Generation details
-    media_type = models.CharField(max_length=10, choices=MEDIA_TYPE_CHOICES, default='image')
-    prompt = models.TextField(help_text="The optimized super-prompt used")
+    type = models.CharField(max_length=50, choices=TYPE_CHOICES, default='image')
+    prompt = models.TextField(blank=True, help_text="The optimized super-prompt used")
+    content = models.TextField(blank=True, help_text="Generated content output")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
-
-    # Generation parameters (for reproducibility)
-    generation_params = models.JSONField(default=dict, blank=True)
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -283,6 +269,77 @@ class Generation(models.Model):
 
     def __str__(self):
         return f"Generation {self.uuid}"
+
+
+class Preview(models.Model):
+    """
+    A versioned preview composition of generations.
+
+    Groups selected generations into a named preview version
+    that can be reviewed before finalizing as a post.
+    """
+
+    uuid = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    # Preview details
+    version_name = models.CharField(max_length=255, blank=True)
+    internal_notes = models.TextField(blank=True)
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'preview'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Preview {self.version_name or self.uuid}"
+
+
+class PreviewItem(models.Model):
+    """
+    Junction table linking Previews to Generations.
+
+    Each item represents a specific generation used in a preview,
+    with a position for ordering.
+    """
+
+    uuid = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    preview = models.ForeignKey(
+        Preview,
+        on_delete=models.CASCADE,
+        related_name='items',
+        db_column='preview_uuid'
+    )
+
+    generation = models.OneToOneField(
+        Generation,
+        on_delete=models.CASCADE,
+        related_name='preview_item',
+        db_column='generation_uuid'
+    )
+
+    position = models.IntegerField(default=0)
+
+    class Meta:
+        db_table = 'preview_items'
+        ordering = ['position']
+        indexes = [
+            models.Index(fields=['preview', 'position']),
+        ]
+
+    def __str__(self):
+        return f"PreviewItem {self.uuid} (pos={self.position})"
 
 
 class Post(models.Model):
@@ -320,8 +377,7 @@ class Post(models.Model):
         related_name='posts',
         db_column='brand_uuid'
     )
-
-    # SIA Solutions integration - track who owns this post
+        # SIA Solutions integration - track who owns this post
     user_id = models.CharField(
         max_length=36,
         null=True,
@@ -330,17 +386,17 @@ class Post(models.Model):
         help_text="SIA User UUID who owns this post"
     )
 
-    creation = models.ForeignKey(
-        Creation,
+    preview = models.OneToOneField(
+        Preview,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='posts',
-        db_column='creation_uuid'
+        related_name='post',
+        db_column='preview_uuid'
     )
 
     # Post content
-    copy = models.TextField(blank=True, help_text="Post caption/copy")
+    final_copy = models.TextField(blank=True, help_text="Final post caption/copy")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
 
     # Scheduling
@@ -357,9 +413,6 @@ class Post(models.Model):
     shares = models.PositiveIntegerField(default=0)
     reach = models.PositiveIntegerField(default=0)
     engagement_rate = models.FloatField(default=0.0)
-
-    # Additional metrics (flexible storage)
-    metrics = models.JSONField(default=dict, blank=True)
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -427,9 +480,6 @@ class PlatformInsight(models.Model):
     reach = models.PositiveIntegerField(default=0)
     engagement_rate = models.FloatField(default=0.0)
 
-    # Additional metrics
-    metrics = models.JSONField(default=dict, blank=True)
-
     # Timestamp
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -445,59 +495,3 @@ class PlatformInsight(models.Model):
 
     def __str__(self):
         return f"{self.brand.name} - {self.platform} ({self.date})"
-
-
-class MediaFile(models.Model):
-    """
-    Logistical warehouse for digital assets.
-
-    Manages persistence and availability of binary files by linking
-    secure CDN URLs to their corresponding generation.
-    """
-
-    FILE_TYPE_CHOICES = [
-        ('image/jpeg', 'JPEG Image'),
-        ('image/png', 'PNG Image'),
-        ('image/webp', 'WebP Image'),
-        ('video/mp4', 'MP4 Video'),
-    ]
-
-    uuid = models.UUIDField(
-        primary_key=True,
-        default=uuid.uuid4,
-        editable=False
-    )
-
-    generation = models.ForeignKey(
-        Generation,
-        on_delete=models.CASCADE,
-        related_name='media_files',
-        db_column='generation_uuid'
-    )
-
-    # File information
-    url = models.URLField(max_length=1000, validators=[URLValidator()])
-    file_type = models.CharField(max_length=30, choices=FILE_TYPE_CHOICES)
-
-    # Storage metadata
-    file_size = models.PositiveIntegerField(null=True, blank=True, help_text="Size in bytes")
-    width = models.PositiveIntegerField(null=True, blank=True)
-    height = models.PositiveIntegerField(null=True, blank=True)
-
-    # CDN/Storage info
-    storage_provider = models.CharField(max_length=50, blank=True, default='cloudinary')
-    storage_metadata = models.JSONField(default=dict, blank=True)
-
-    # Timestamps
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = 'media_files'
-        ordering = ['-created_at']
-        indexes = [
-            models.Index(fields=['generation']),
-            models.Index(fields=['file_type']),
-        ]
-
-    def __str__(self):
-        return f"Media {self.uuid}"
