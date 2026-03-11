@@ -34,7 +34,8 @@ def persistence_node(state: BrandDNAState):
             voice_tone=llm_output.get("voice_tone", ""),
             keywords=llm_output.get("keywords", ""),
             description=llm_output.get("description", ""),
-            raw_data=scraper_result,
+            archetype=llm_output.get("archetype", ""),
+            target_audience=llm_output.get("target_audience", ""),
         )
 
         base_slug = slugify(title) or "brand"

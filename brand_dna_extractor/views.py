@@ -43,7 +43,7 @@ ErrorResponseSerializer = inline_serializer(
 @extend_schema(
     tags=['Brand DNA Extractor'],
     summary='Extract Brand DNA via AI Agent',
-    description='Scrapes the provided brand URL to extract and process color palettes, typography, voice tone, metadata, and industry via a LangGraph AI workflow. Results are saved in the DB natively tied to the authenticated creator.',
+    description='Scrapes the provided brand URL to extract and process color palettes, typography, voice tone, archetype, target audience, and industry via a LangGraph AI workflow. Results are saved in the DB natively tied to the authenticated creator.',
     request=ExtractRequestSerializer,
     responses={
         200: OpenApiResponse(
@@ -65,6 +65,8 @@ ErrorResponseSerializer = inline_serializer(
                             "font_body_family": "Helvetica",
                             "font_headings_family": "Helvetica Neue",
                             "voice_tone": "Inspirational, Bold, Athletic",
+                            "archetype": "The Hero",
+                            "target_audience": "Athletes and fitness enthusiasts who value performance and style",
                             "keywords": "shoes, sports, fitness, clothes",
                             "description": "Nike delivers innovative products, experiences and services to inspire athletes."
                         },
