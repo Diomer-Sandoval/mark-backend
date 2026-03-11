@@ -66,6 +66,7 @@ aws_credentials.json
 # for locally
 MARK_Template_vectorDB_rebuild.docx
 
+
 # Vector database files
 *.sqlite3
 *.db
