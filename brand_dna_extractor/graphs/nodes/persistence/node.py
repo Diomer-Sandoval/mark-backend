@@ -1,30 +1,20 @@
+from django.utils.text import slugify
+
 from ...state import BrandDNAState
 
 
 def persistence_node(state: BrandDNAState):
+    from creation_studio.models import Brand, BrandDNA
+    
     if state.get("error"):
         return state
 
-    llm_output = state["llm_output"]
-    input_url = state["input_url"]
-    scraper_result = state["scraper_result"]
-    logo_url = scraper_result.get("metadata", {}).get("logo", "")
-
-    title = llm_output.get("brand_name") or scraper_result.get("metadata", {}).get("title", "Unknown Brand")
-
-    # Initialize Django if apps aren't loaded yet (e.g. when running via LangGraph dev server)
-    import django
-    from django.apps import apps
-    if not apps.ready:
-        import os
-        os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-        django.setup()
-
-    from creation_studio.models import Brand, BrandDNA
-    from django.utils.text import slugify
+    llm_output = state.get("llm_output", {})
+    if not llm_output:
+        return {"error": "No LLM output to persist"}
 
     try:
-        dna_record = BrandDNA.objects.create(
+        brand_dna = BrandDNA.objects.create(
             primary_color=llm_output.get("primary_color", ""),
             secondary_color=llm_output.get("secondary_color", ""),
             accent_color=llm_output.get("accent_color", ""),
@@ -38,41 +28,27 @@ def persistence_node(state: BrandDNAState):
             target_audience=llm_output.get("target_audience", ""),
         )
 
-        base_slug = slugify(title) or "brand"
+        brand_name = llm_output.get("brand_name", "Unknown Brand")
+        base_slug = slugify(brand_name)
         slug = base_slug
         counter = 1
         while Brand.objects.filter(slug=slug).exists():
             slug = f"{base_slug}-{counter}"
             counter += 1
 
-        brand, created = Brand.objects.get_or_create(
-            page_url=input_url,
-            defaults={
-                "name": title,
-                "slug": slug,
-                "logo_url": logo_url,
-                "dna": dna_record,
-                "industry": llm_output.get("industry", ""),
-                "user_id": state.get("user_id"),
-                "tenant_id": state.get("tenant_id"),
-            },
+        brand = Brand.objects.create(
+            dna=brand_dna,
+            name=brand_name,
+            slug=slug,
+            page_url=state.get("input_url", ""),
+            primary_color=llm_output.get("primary_color", ""),
+            industry=llm_output.get("industry", ""),
+            user_id=state.get("user_id"),
         )
 
-        if not created:
-            if brand.dna:
-                brand.dna.delete()
-            brand.dna = dna_record
-            brand.name = title
-            brand.industry = llm_output.get("industry", "")
-            if logo_url and not brand.logo_url:
-                brand.logo_url = logo_url
-            if state.get("user_id"):
-                brand.user_id = state.get("user_id")
-            if state.get("tenant_id"):
-                brand.tenant_id = state.get("tenant_id")
-            brand.save()
-
-        return {"db_saved": True, "brand_id": str(brand.uuid)}
-
+        return {
+            "brand_id": str(brand.uuid),
+            "db_saved": True,
+        }
     except Exception as e:
-        return {"error": f"Database error: {str(e)}", "db_saved": False}
+        return {"error": f"Persistence error: {str(e)}"}

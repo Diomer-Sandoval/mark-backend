@@ -11,6 +11,8 @@ All endpoints require authentication via SIA Solutions JWT or API Key.
 Data is automatically filtered to show only the current user's records.
 """
 
+import json
+import concurrent.futures
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.views import APIView
@@ -20,7 +22,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 
 from ..models import (
     Brand, BrandDNA, Creation, Generation,
-    Preview, PreviewItem, Post, PlatformInsight
+    Preview, PreviewItem, Post, PlatformInsight, MediaFile
 )
 from ..auth import (
     SIAJWTAuthentication, SIAAPIKeyAuthentication,
@@ -597,6 +599,7 @@ _POST_TYPE_TO_PIPELINE = {
     "infographic": "image",
     "carousel": "carousel",
     "reel": "video",
+    "video": "video",
 }
 
 
@@ -606,7 +609,7 @@ def _pipeline_image(creation, body: dict):
     creation_platforms = [p for p in creation.platforms.split(",") if p.strip()] if creation.platforms else ["instagram"]
     initial_state = {
         "creation_uuid": str(creation.uuid),
-        "prompt": body.get("prompt", creation.original_prompt),
+        "prompt": body.get("prompt", ""),
         "platforms": body.get("platforms", creation_platforms),
         "post_type": body.get("post_type", creation.post_type or "post"),
         "post_tone": body.get("post_tone", creation.post_tone or "promotional"),
@@ -627,10 +630,10 @@ def _pipeline_image(creation, body: dict):
 
     generation = Generation.objects.create(
         creation=creation,
-        media_type="image",
-        prompt=image_prompt,
+        type="image",
+        prompt=body.get("prompt", ""),
         status="done",
-        generation_params={"platforms": initial_state["platforms"]},
+        content=image_url,
     )
     if image_url:
         MediaFile.objects.create(
@@ -651,8 +654,8 @@ def _pipeline_carousel(creation, body: dict):
 
     initial_state = {
         "creation_uuid": str(creation.uuid),
-        "topic": body.get("prompt", creation.original_prompt),
-        "prompt": body.get("prompt", creation.original_prompt),
+        "topic": body.get("prompt", ""),
+        "prompt": body.get("prompt", ""),
         "platform": platform,
         "platforms": [platform],
         "post_tone": body.get("post_tone", creation.post_tone or "educational"),
@@ -665,19 +668,15 @@ def _pipeline_carousel(creation, body: dict):
     result = _carousel_agent.invoke(initial_state)
 
     completed_slides = result.get("completed_slides", [])
-    generations = []
+
+    slide_generations = []
     for slide in completed_slides:
         gen = Generation.objects.create(
             creation=creation,
-            media_type="image",
-            prompt=slide.get("headline", ""),
+            type="image",
+            prompt=body.get("prompt", ""),
             status="done",
-            generation_params={
-                "slide_index": slide.get("index"),
-                "headline": slide.get("headline", ""),
-                "qc_passed": slide.get("qc_passed", False),
-                "qc_attempts": slide.get("qc_attempts", 1),
-            },
+            content=slide.get("image_url", ""),
         )
         if slide.get("image_url"):
             MediaFile.objects.create(
@@ -685,9 +684,18 @@ def _pipeline_carousel(creation, body: dict):
                 url=slide["image_url"],
                 file_type="image/jpeg",
             )
-        generations.append(gen)
+        slide_generations.append(gen)
 
-    return generations, {
+    # Create master carousel generation
+    master_gen = Generation.objects.create(
+        creation=creation,
+        type="carousel",
+        prompt=body.get("prompt", ""),
+        status="done",
+        content=",".join([str(g.uuid) for g in slide_generations]),
+    )
+
+    return master_gen, {
         "caption": result.get("caption", ""),
         "hashtags": result.get("hashtags", []),
     }
@@ -706,8 +714,8 @@ def _pipeline_video(creation, body: dict):
 
     initial_state = {
         "creation_uuid": str(creation.uuid),
-        "topic": body.get("prompt", creation.original_prompt),
-        "prompt": body.get("prompt", creation.original_prompt),
+        "topic": body.get("prompt", ""),
+        "prompt": body.get("prompt", ""),
         "platform": platform,
         "platforms": [platform],
         "video_tone": body.get("video_tone", creation.post_tone or "General"),
@@ -722,18 +730,14 @@ def _pipeline_video(creation, body: dict):
     result = _video_agent.invoke(initial_state)
 
     completed_scenes = result.get("completed_scenes", [])
-    generations = []
+    scene_generations = []
     for scene in completed_scenes:
         gen = Generation.objects.create(
             creation=creation,
-            media_type="video",
-            prompt=f"Scene {scene.get('scene_number', '')}",
+            type="video",
+            prompt=body.get("prompt", ""),
             status="done",
-            generation_params={
-                "scene_number": scene.get("scene_number"),
-                "type": scene.get("type", ""),
-                "filtered": scene.get("filtered", False),
-            },
+            content=scene.get("video_url", ""),
         )
         if scene.get("video_url"):
             MediaFile.objects.create(
@@ -741,9 +745,18 @@ def _pipeline_video(creation, body: dict):
                 url=scene["video_url"],
                 file_type="video/mp4",
             )
-        generations.append(gen)
+        scene_generations.append(gen)
 
-    return generations, {
+    # Create master video generation
+    master_gen = Generation.objects.create(
+        creation=creation,
+        type="video",
+        prompt=body.get("prompt", ""),
+        status="done",
+        content=",".join([str(g.uuid) for g in scene_generations]),
+    )
+
+    return master_gen, {
         "caption": result.get("caption", ""),
         "hashtags": result.get("hashtags", []),
     }
@@ -769,10 +782,10 @@ def _pipeline_edit_image(parent_generation, body: dict):
     generation = Generation.objects.create(
         creation=creation,
         parent=parent_generation,
-        media_type="image",
+        type="image",
         prompt=body.get("prompt", ""),
         status="done",
-        generation_params={"edit_of": str(parent_generation.uuid)},
+        content=result_url,
     )
     if result_url:
         MediaFile.objects.create(
@@ -791,7 +804,7 @@ def _pipeline_edit_copy(parent_generation, body: dict):
 
     initial_state = {
         "creation_uuid": str(creation.uuid),
-        "prompt": body.get("prompt", creation.original_prompt),
+        "prompt": body.get("prompt", ""),
         "current_copy": body.get("current_copy", ""),
         "copy_feedback": body.get("copy_feedback", ""),
         "platforms": body.get("platforms", creation_platforms),
@@ -813,10 +826,10 @@ def _pipeline_edit_copy(parent_generation, body: dict):
     generation = Generation.objects.create(
         creation=creation,
         parent=parent_generation,
-        media_type="image",
-        prompt=body.get("prompt", creation.original_prompt),
+        type="copy",
+        prompt=body.get("prompt", ""),
         status="done",
-        generation_params={"edit_type": "copy", "edit_of": str(parent_generation.uuid)},
+        content=copy_part,
     )
     return generation, {"copy": copy_part}
 
@@ -830,11 +843,11 @@ def _pipeline_edit_carousel_slide(parent_generation, body: dict):
 
     slide = body.get("slide", {})
     if not slide:
-        # Rebuild slide from parent generation_params
-        params = parent_generation.generation_params or {}
+        # Rebuild slide from parent (content is now just URL)
+        # We use parent's prompt as the headline
         slide = {
-            "index": params.get("slide_index", 0),
-            "headline": params.get("headline", ""),
+            "index": 0,
+            "headline": parent_generation.prompt,
         }
 
     visual_theme = body.get("visual_theme", "")
@@ -893,16 +906,10 @@ def _pipeline_edit_carousel_slide(parent_generation, body: dict):
     generation = Generation.objects.create(
         creation=creation,
         parent=parent_generation,
-        media_type="image",
-        prompt=expected_headline,
+        type="image",
+        prompt=feedback,
         status="done",
-        generation_params={
-            "slide_index": slide_index,
-            "headline": expected_headline,
-            "qc_passed": qc_passed,
-            "qc_attempts": attempts,
-            "edit_of": str(parent_generation.uuid),
-        },
+        content=image_url,
     )
     if image_url:
         MediaFile.objects.create(
@@ -963,28 +970,38 @@ class GenerationListView(APIView):
             "**Edit existing** — send `parent` (generation UUID) to create a new version.\n\n"
             "---\n\n"
             "### Create flows\n\n"
-            "**image** `{\"prompt\": \"...\"}` → `{generation, copy}`\n\n"
-            "**carousel** `{\"prompt\": \"...\"}` → `{generations, caption, hashtags}`\n\n"
-            "**video** `{\"prompt\": \"...\"}` → `{generations, caption, hashtags}`\n\n"
+            "**image** `{\"prompt\": \"...\"}` → `{generation}` (content has image URL)\n\n"
+            "**carousel** `{\"prompt\": \"...\", \"num_slides\": 7}` → `{generation}` (Master generation. Content has comma-separated slice UUIDs. Use GET /api/generations/<uuid>/ to fetch slices)\n\n"
+            "**video** `{\"prompt\": \"...\", \"num_scenes\": 4, \"scene_duration\": 6}` → `{generation}` (Master generation. Content has comma-separated scene UUIDs. Use GET /api/generations/<uuid>/ to fetch slices)\n\n"
             "---\n\n"
             "### Edit flows (send `parent`)\n\n"
             "**edit_image** `{\"parent\": \"uuid\", \"prompt\": \"Make background blue\"}` → `{generation}`\n\n"
-            "**edit_copy** `{\"parent\": \"uuid\", \"type\": \"edit_copy\", \"current_copy\": \"...\", \"copy_feedback\": \"...\"}` → `{generation, copy}`\n\n"
-            "**edit_carousel_slide** `{\"parent\": \"uuid\", \"prompt\": \"More vibrant\"}` → `{generation, slide}`\n"
+            "**edit_copy** `{\"parent\": \"uuid\", \"type\": \"edit_copy\", \"current_copy\": \"...\", \"copy_feedback\": \"...\"}` → `{generation}` (type=copy, content has text)\n\n"
+            "**edit_carousel_slide** `{\"parent\": \"uuid\", \"prompt\": \"More vibrant\"}` → `{generation}`\n"
         ),
         responses={201: GenerationDetailSerializer},
         examples=[
             OpenApiExample(
                 'Image Generation Request',
                 value={
-                    "type": "image",
-                    "status": "done",
-                    "prompt": "Professional athlete running at sunset",
-                    "content": {
-                        "url": "https://res.cloudinary.com/demo/image/upload/v1/creation/img1.jpg",
-                        "width": 1024,
-                        "height": 1024
-                    }
+                    "prompt": "Professional athlete running at sunset"
+                },
+                request_only=True
+            ),
+            OpenApiExample(
+                'Carousel Generation Request',
+                value={
+                    "prompt": "5 tips for better web hosting",
+                    "num_slides": 5
+                },
+                request_only=True
+            ),
+            OpenApiExample(
+                'Video Generation Request',
+                value={
+                    "prompt": "Showcasing Hostinger's high-speed cloud hosting",
+                    "num_scenes": 4,
+                    "scene_duration": 6
                 },
                 request_only=True
             )
@@ -1002,8 +1019,9 @@ class GenerationListView(APIView):
                 parent = get_object_or_404(Generation, uuid=parent_uuid, creation=creation)
                 edit_type = body.get("type")
                 if not edit_type:
-                    params = parent.generation_params or {}
-                    if "slide_index" in params:
+                    if parent.type == "copy":
+                        edit_type = "edit_copy"
+                    elif creation.post_type == "carousel":
                         edit_type = "edit_carousel_slide"
                     else:
                         edit_type = "edit_image"
@@ -1020,7 +1038,7 @@ class GenerationListView(APIView):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
                 return Response(
-                    {"generation": GenerationDetailSerializer(generation).data, **extra},
+                    {"generation": GenerationDetailSerializer(generation).data},
                     status=status.HTTP_201_CREATED,
                 )
 
@@ -1036,19 +1054,19 @@ class GenerationListView(APIView):
             if content_type == "image":
                 generation, extra = _pipeline_image(creation, body)
                 return Response(
-                    {"generation": GenerationDetailSerializer(generation).data, **extra},
+                    {"generation": GenerationDetailSerializer(generation).data},
                     status=status.HTTP_201_CREATED,
                 )
             elif content_type == "carousel":
-                generations, extra = _pipeline_carousel(creation, body)
+                master_gen, extra = _pipeline_carousel(creation, body)
                 return Response(
-                    {"generations": GenerationDetailSerializer(generations, many=True).data, **extra},
+                    {"generation": GenerationDetailSerializer(master_gen).data},
                     status=status.HTTP_201_CREATED,
                 )
             elif content_type == "video":
-                generations, extra = _pipeline_video(creation, body)
+                master_gen, extra = _pipeline_video(creation, body)
                 return Response(
-                    {"generations": GenerationDetailSerializer(generations, many=True).data, **extra},
+                    {"generation": GenerationDetailSerializer(master_gen).data},
                     status=status.HTTP_201_CREATED,
                 )
             else:

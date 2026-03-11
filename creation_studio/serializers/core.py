@@ -11,7 +11,7 @@ Provides serializers for:
 from rest_framework import serializers
 from ..models import (
     Brand, BrandDNA, Creation, Generation,
-    Preview, PreviewItem, Post, PlatformInsight
+    Preview, PreviewItem, Post, PlatformInsight, MediaFile
 )
 
 
@@ -123,6 +123,17 @@ class BrandUpdateSerializer(serializers.ModelSerializer):
 
 # ============ Generation Serializers ============
 
+class MediaFileSerializer(serializers.ModelSerializer):
+    """
+    Serializer for MediaFile model.
+    """
+
+    class Meta:
+        model = MediaFile
+        fields = ['uuid', 'url', 'file_type', 'width', 'height', 'file_size', 'created_at']
+        read_only_fields = ['uuid', 'created_at']
+
+
 class GenerationListSerializer(serializers.ModelSerializer):
     """
     Lightweight serializer for Generation list views.
@@ -146,19 +157,32 @@ class GenerationDetailSerializer(serializers.ModelSerializer):
 
     creation_uuid = serializers.CharField(source='creation.uuid', read_only=True)
     parent_uuid = serializers.CharField(source='parent.uuid', read_only=True, default=None)
-    children = serializers.SerializerMethodField()
+    slices = serializers.SerializerMethodField()
 
     class Meta:
         model = Generation
         fields = [
             'uuid', 'creation_uuid', 'parent_uuid',
             'type', 'prompt', 'status', 'content',
-            'children', 'created_at'
+            'slices', 'created_at'
         ]
 
-    def get_children(self, obj):
-        children = obj.children.all()
-        return GenerationListSerializer(children, many=True).data
+    def get_slices(self, obj):
+        """If this is a master generation (carousel/video), return its child generations."""
+        if obj.type in ["carousel", "video"] and obj.content:
+            try:
+                # Content stores comma-separated UUIDs of child generations
+                uuids = [u.strip() for u in obj.content.split(",") if u.strip()]
+                if uuids:
+                    # Fetch and serialize children
+                    children = Generation.objects.filter(uuid__in=uuids)
+                    # Maintain order from the content string
+                    uuid_to_child = {str(child.uuid): child for child in children}
+                    ordered_children = [uuid_to_child[u] for u in uuids if u in uuid_to_child]
+                    return GenerationListSerializer(ordered_children, many=True).data
+            except Exception:
+                pass
+        return []
 
 
 class GenerationCreateSerializer(serializers.ModelSerializer):

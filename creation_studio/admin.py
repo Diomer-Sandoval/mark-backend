@@ -22,9 +22,9 @@ class BrandDNAAdmin(admin.ModelAdmin):
 
 @admin.register(Brand)
 class BrandAdmin(admin.ModelAdmin):
-    list_display = ('uuid', 'name', 'slug', 'industry', 'is_active', 'user_id', 'tenant_id', 'created_at')
+    list_display = ('uuid', 'name', 'slug', 'industry', 'is_active', 'user_id', 'created_at')
     list_filter = ('is_active', 'industry')
-    search_fields = ('name', 'slug', 'user_id', 'tenant_id')
+    search_fields = ('name', 'slug', 'user_id')
     readonly_fields = ('uuid', 'created_at', 'updated_at')
 
 
@@ -60,9 +60,9 @@ class PreviewItemAdmin(admin.ModelAdmin):
 
 @admin.register(Post)
 class PostAdmin(admin.ModelAdmin):
-    list_display = ('uuid', 'brand', 'status', 'user_id', 'scheduled_date', 'engagement_rate')
-    list_filter = ('status', 'post_type', 'platforms')
-    search_fields = ('final_copy', 'user_id')
+    list_display = ('uuid', 'brand', 'status', 'scheduled_date', 'engagement_rate')
+    list_filter = ('status', 'post_type')
+    search_fields = ('final_copy',)
     readonly_fields = ('uuid', 'created_at', 'updated_at')
 
 

@@ -51,18 +51,11 @@ class Brand(models.Model):
         help_text="SIA User UUID (from OAuth/JWT) - who owns this brand"
     )
 
-    tenant_id = models.CharField(
-        max_length=36,
-        null=True,
-        blank=True,
-        db_index=True,
-        help_text="SIA Tenant UUID - which organization this brand belongs to"
-    )
-
     # Brand information
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
     page_url = models.URLField(max_length=500, blank=True, validators=[URLValidator()])
+    primary_color = models.CharField(max_length=7, blank=True, help_text="Hex color code")
     logo_url = models.URLField(max_length=500, blank=True, validators=[URLValidator()])
 
     # Status and metadata
@@ -152,6 +145,7 @@ class Creation(models.Model):
         ('post', 'Post'),
         ('carousel', 'Carousel'),
         ('reel', 'Reel'),
+        ('video', 'Video'),
         ('story', 'Story'),
         ('infographic', 'Infographic'),
     ]
@@ -253,6 +247,7 @@ class Generation(models.Model):
     type = models.CharField(max_length=50, choices=TYPE_CHOICES, default='image')
     prompt = models.TextField(blank=True, help_text="The optimized super-prompt used")
     content = models.TextField(blank=True, help_text="Generated content output")
+    keywords = models.CharField(max_length=500, blank=True, help_text="Comma-separated keywords")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
 
     # Timestamps
@@ -322,10 +317,10 @@ class PreviewItem(models.Model):
         db_column='preview_uuid'
     )
 
-    generation = models.OneToOneField(
+    generation = models.ForeignKey(
         Generation,
         on_delete=models.CASCADE,
-        related_name='preview_item',
+        related_name='preview_items',
         db_column='generation_uuid'
     )
 
@@ -361,6 +356,7 @@ class Post(models.Model):
         ('post', 'Post'),
         ('carousel', 'Carousel'),
         ('reel', 'Reel'),
+        ('video', 'Video'),
         ('story', 'Story'),
         ('infographic', 'Infographic'),
     ]
@@ -377,21 +373,13 @@ class Post(models.Model):
         related_name='posts',
         db_column='brand_uuid'
     )
-        # SIA Solutions integration - track who owns this post
-    user_id = models.CharField(
-        max_length=36,
-        null=True,
-        blank=True,
-        db_index=True,
-        help_text="SIA User UUID who owns this post"
-    )
 
-    preview = models.OneToOneField(
+    preview = models.ForeignKey(
         Preview,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='post',
+        related_name='posts',
         db_column='preview_uuid'
     )
 
@@ -405,7 +393,6 @@ class Post(models.Model):
 
     # Post metadata
     post_type = models.CharField(max_length=20, choices=POST_TYPE_CHOICES, default='post')
-    platforms = models.CharField(max_length=255, blank=True, help_text="Comma-separated platforms")
 
     # Performance metrics
     likes = models.PositiveIntegerField(default=0)
@@ -495,3 +482,46 @@ class PlatformInsight(models.Model):
 
     def __str__(self):
         return f"{self.brand.name} - {self.platform} ({self.date})"
+
+
+class MediaFile(models.Model):
+    """
+    Store URLs and metadata for files associated with a Generation.
+
+    Allows a single generation to have multiple assets (e.g. video + thumbnail),
+    or simply stores the primary visual output in a structured way.
+    """
+
+    uuid = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    generation = models.ForeignKey(
+        Generation,
+        on_delete=models.CASCADE,
+        related_name='media_files',
+        db_column='generation_uuid'
+    )
+
+    # File details
+    url = models.URLField(max_length=1000, help_text="Public URL of the asset (e.g. Cloudinary)")
+    file_type = models.CharField(max_length=100, blank=True, help_text="MIME type (e.g. image/jpeg, video/mp4)")
+    
+    # Metadata for the file
+    width = models.PositiveIntegerField(null=True, blank=True)
+    height = models.PositiveIntegerField(null=True, blank=True)
+    file_size = models.PositiveIntegerField(null=True, blank=True, help_text="Size in bytes")
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'media_files'
+        ordering = ['created_at']
+        verbose_name = 'Media File'
+        verbose_name_plural = 'Media Files'
+
+    def __str__(self):
+        return f"MediaFile {self.uuid} ({self.file_type})"
