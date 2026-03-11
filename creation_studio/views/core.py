@@ -52,11 +52,18 @@ from ..serializers import (
 )
 from .content import (
     agent as _image_agent,
+    copy_agent as _copy_agent,
+    edit_image_agent as _edit_image_agent,
     carousel_agent as _carousel_agent,
     video_agent as _video_agent,
     _resolve_logo,
     _ASPECT_RATIO_MAP,
 )
+from ..graphs.create_carousel.nodes.generate_slides.slide_prompt_engineer import build_slide_prompt
+from ..graphs.create_carousel.nodes.generate_slides.slide_qc_validator import validate_slide
+from ..graphs.create_carousel.nodes.generate_slides.node import MAX_RETRIES
+from ..graphs.utils.gemini_utils import generate_image_with_logo
+from ..graphs.utils.cloudinary_utils import upload_image
 
 
 def check_ownership(obj, user):
@@ -742,6 +749,186 @@ def _pipeline_video(creation, body: dict):
     }
 
 
+def _pipeline_edit_image(parent_generation, body: dict):
+    """Edit an existing image generation. Returns (Generation, extra_dict)."""
+    creation = parent_generation.creation
+
+    # Get the current image URL from the parent's media files
+    parent_media = parent_generation.media_files.first()
+    img_url = body.get("img_url", parent_media.url if parent_media else "")
+
+    result = _edit_image_agent.invoke({
+        "creation_uuid": str(creation.uuid),
+        "parent_uuid": str(parent_generation.uuid),
+        "prompt": body.get("prompt", ""),
+        "img_url": img_url,
+    })
+
+    result_url = result.get("result_url", "")
+
+    generation = Generation.objects.create(
+        creation=creation,
+        parent=parent_generation,
+        media_type="image",
+        prompt=body.get("prompt", ""),
+        status="done",
+        generation_params={"edit_of": str(parent_generation.uuid)},
+    )
+    if result_url:
+        MediaFile.objects.create(
+            generation=generation,
+            url=result_url,
+            file_type="image/jpeg",
+        )
+    return generation, {}
+
+
+def _pipeline_edit_copy(parent_generation, body: dict):
+    """Regenerate marketing copy. Returns (Generation, extra_dict)."""
+    creation = parent_generation.creation
+    db_brand_dna, db_identity = _brand_context_from_creation(creation)
+    creation_platforms = [p for p in creation.platforms.split(",") if p.strip()] if creation.platforms else ["instagram"]
+
+    initial_state = {
+        "creation_uuid": str(creation.uuid),
+        "prompt": body.get("prompt", creation.original_prompt),
+        "current_copy": body.get("current_copy", ""),
+        "copy_feedback": body.get("copy_feedback", ""),
+        "platforms": body.get("platforms", creation_platforms),
+        "post_type": body.get("post_type", creation.post_type or "post"),
+        "post_tone": body.get("post_tone", creation.post_tone or "promotional"),
+        "brand_dna": body.get("brand_dna", {k: v for k, v in db_brand_dna.items() if k != "typography"}),
+        "identity": body.get("identity", db_identity),
+    }
+
+    result = _copy_agent.invoke(initial_state)
+
+    strategy_raw = result.get("strategy", "")
+    if "---" in strategy_raw:
+        _, copy_part = strategy_raw.split("---", 1)
+        copy_part = copy_part.strip()
+    else:
+        copy_part = strategy_raw
+
+    generation = Generation.objects.create(
+        creation=creation,
+        parent=parent_generation,
+        media_type="image",
+        prompt=body.get("prompt", creation.original_prompt),
+        status="done",
+        generation_params={"edit_type": "copy", "edit_of": str(parent_generation.uuid)},
+    )
+    return generation, {"copy": copy_part}
+
+
+def _pipeline_edit_carousel_slide(parent_generation, body: dict):
+    """Regenerate a single carousel slide with QC. Returns (Generation, extra_dict)."""
+    creation = parent_generation.creation
+    db_brand_dna, db_identity = _brand_context_from_creation(creation)
+    logo_base64, logo_mime_type = _resolve_logo({**{"logo_url": db_identity.get("logo_url", "")}, **body})
+    creation_platform = creation.platforms.split(",")[0].strip() if creation.platforms else "instagram"
+
+    slide = body.get("slide", {})
+    if not slide:
+        # Rebuild slide from parent generation_params
+        params = parent_generation.generation_params or {}
+        slide = {
+            "index": params.get("slide_index", 0),
+            "headline": params.get("headline", ""),
+        }
+
+    visual_theme = body.get("visual_theme", "")
+    platform = body.get("platform", creation_platform)
+    brand_dna = body.get("brand_dna", db_brand_dna)
+    feedback = body.get("feedback", body.get("prompt", ""))
+
+    slide_index = slide.get("index", 0)
+    expected_headline = slide.get("headline", "")
+    qc_feedback = feedback
+    image_url = ""
+    qc_passed = False
+    attempts = 0
+    last_error = ""
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        attempts = attempt
+        prompt = build_slide_prompt(
+            slide=slide,
+            brand_dna=brand_dna,
+            platform=platform,
+            visual_theme=visual_theme,
+            qc_feedback=qc_feedback,
+        )
+
+        try:
+            image_b64 = generate_image_with_logo(
+                prompt=prompt,
+                logo_base64=logo_base64,
+                logo_mime_type=logo_mime_type,
+            )
+        except Exception as e:
+            last_error = f"Image generation error: {e}"
+            image_b64 = None
+            continue
+
+        if not image_b64:
+            last_error = "Image generation returned no data"
+            continue
+
+        passed, issues = validate_slide(image_b64, expected_headline)
+        qc_passed = passed
+
+        if passed or attempt == MAX_RETRIES:
+            folder = f"ia_generations/{creation.uuid}/carousel"
+            try:
+                import uuid as _uuid_mod
+                image_url = upload_image(image_b64, folder, str(_uuid_mod.uuid4()))
+            except Exception as e:
+                last_error = f"Cloudinary upload failed: {e}"
+                image_url = ""
+            break
+        else:
+            qc_feedback = "\n".join(issues)
+
+    generation = Generation.objects.create(
+        creation=creation,
+        parent=parent_generation,
+        media_type="image",
+        prompt=expected_headline,
+        status="done",
+        generation_params={
+            "slide_index": slide_index,
+            "headline": expected_headline,
+            "qc_passed": qc_passed,
+            "qc_attempts": attempts,
+            "edit_of": str(parent_generation.uuid),
+        },
+    )
+    if image_url:
+        MediaFile.objects.create(
+            generation=generation,
+            url=image_url,
+            file_type="image/jpeg",
+        )
+
+    extra = {
+        "slide": {
+            "index": slide_index,
+            "headline": expected_headline,
+            "image_url": image_url,
+            "qc_passed": qc_passed,
+            "qc_attempts": attempts,
+        }
+    }
+    if not image_url and last_error:
+        extra["slide"]["error"] = last_error
+
+    return generation, extra
+
+
+_EDIT_VALID_TYPES = ["edit_image", "edit_copy", "edit_carousel_slide"]
+
+
 class GenerationListView(APIView):
     """List all generations for a creation or create a new generation."""
     authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
@@ -769,14 +956,22 @@ class GenerationListView(APIView):
 
     @extend_schema(
         tags=['Generations'],
-        summary='Create New Generation',
-        description='''
-        Record a new AI generation (image, video, or text).
-        Generations must be linked to a `creation` and can optionally have a `parent` generation
-        (used for tracking edits or variations).
-        Content is stored as a JSON object to support different asset types.
-        ''',
-        request=GenerationCreateSerializer,
+        summary='Create or Edit Generation',
+        description=(
+            "Trigger an AI generation pipeline for an existing creation.\n\n"
+            "**Create new** — omit `parent`, type is inferred from `creation.post_type`.\n"
+            "**Edit existing** — send `parent` (generation UUID) to create a new version.\n\n"
+            "---\n\n"
+            "### Create flows\n\n"
+            "**image** `{\"prompt\": \"...\"}` → `{generation, copy}`\n\n"
+            "**carousel** `{\"prompt\": \"...\"}` → `{generations, caption, hashtags}`\n\n"
+            "**video** `{\"prompt\": \"...\"}` → `{generations, caption, hashtags}`\n\n"
+            "---\n\n"
+            "### Edit flows (send `parent`)\n\n"
+            "**edit_image** `{\"parent\": \"uuid\", \"prompt\": \"Make background blue\"}` → `{generation}`\n\n"
+            "**edit_copy** `{\"parent\": \"uuid\", \"type\": \"edit_copy\", \"current_copy\": \"...\", \"copy_feedback\": \"...\"}` → `{generation, copy}`\n\n"
+            "**edit_carousel_slide** `{\"parent\": \"uuid\", \"prompt\": \"More vibrant\"}` → `{generation, slide}`\n"
+        ),
         responses={201: GenerationDetailSerializer},
         examples=[
             OpenApiExample(
@@ -798,17 +993,73 @@ class GenerationListView(APIView):
     def post(self, request, creation_uuid):
         user = get_current_user(request)
         creation = get_object_or_404(Creation, uuid=creation_uuid)
-        if not check_ownership(creation, user):
-            return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-            
-        data = request.data.copy()
-        data['creation'] = creation.uuid
+        body = request.data
+        parent_uuid = body.get("parent")
 
-        serializer = GenerationCreateSerializer(data=data)
-        if serializer.is_valid():
-            generation = serializer.save()
-            return Response(GenerationDetailSerializer(generation).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            # ── Edit flow: parent provided ──
+            if parent_uuid:
+                parent = get_object_or_404(Generation, uuid=parent_uuid, creation=creation)
+                edit_type = body.get("type")
+                if not edit_type:
+                    params = parent.generation_params or {}
+                    if "slide_index" in params:
+                        edit_type = "edit_carousel_slide"
+                    else:
+                        edit_type = "edit_image"
+
+                if edit_type == "edit_image":
+                    generation, extra = _pipeline_edit_image(parent, body)
+                elif edit_type == "edit_copy":
+                    generation, extra = _pipeline_edit_copy(parent, body)
+                elif edit_type == "edit_carousel_slide":
+                    generation, extra = _pipeline_edit_carousel_slide(parent, body)
+                else:
+                    return Response(
+                        {"error": f"Unknown edit type '{edit_type}'. Valid values: {_EDIT_VALID_TYPES}"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                return Response(
+                    {"generation": GenerationDetailSerializer(generation).data, **extra},
+                    status=status.HTTP_201_CREATED,
+                )
+
+            # ── Create flow: no parent ──
+            content_type = body.get("type") or _POST_TYPE_TO_PIPELINE.get(creation.post_type)
+
+            if not content_type:
+                return Response(
+                    {"error": f"Could not infer type from creation.post_type='{creation.post_type}'. Provide 'type' explicitly. Valid values: {_GENERATION_VALID_TYPES}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if content_type == "image":
+                generation, extra = _pipeline_image(creation, body)
+                return Response(
+                    {"generation": GenerationDetailSerializer(generation).data, **extra},
+                    status=status.HTTP_201_CREATED,
+                )
+            elif content_type == "carousel":
+                generations, extra = _pipeline_carousel(creation, body)
+                return Response(
+                    {"generations": GenerationDetailSerializer(generations, many=True).data, **extra},
+                    status=status.HTTP_201_CREATED,
+                )
+            elif content_type == "video":
+                generations, extra = _pipeline_video(creation, body)
+                return Response(
+                    {"generations": GenerationDetailSerializer(generations, many=True).data, **extra},
+                    status=status.HTTP_201_CREATED,
+                )
+            else:
+                return Response(
+                    {"error": f"Unknown type '{content_type}'. Valid values: {_GENERATION_VALID_TYPES}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class GenerationDetailView(APIView):
