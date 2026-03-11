@@ -1,4 +1,9 @@
+"""
+Utility functions for creating and updating models in the graph.
+(Previously Firebase-based, now using Django models).
+"""
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -27,28 +32,20 @@ def create_creation(creation_uuid: str, data: dict) -> None:
     status = _STATUS_MAP.get(data.get("status", "pending"), "pending")
     title = (
         data.get("topic", "")
-        or data.get("original_prompt", "")
+        or data.get("title", "")
         or str(creation_uuid)[:50]
     )
     post_tone = data.get("post_tone", "") or data.get("video_tone", "")
 
-    skip_keys = {
-        "uuid", "status", "platforms", "post_type", "type",
-        "post_tone", "video_tone", "update_at", "creation_at",
-    }
-    research_data = {k: v for k, v in data.items() if k not in skip_keys}
-
     try:
         Creation.objects.create(
             uuid=creation_uuid,
-            brand=None,
+            brand=None, # Brand assignment happens in views if brand_uuid is provided
             title=title,
             post_type=post_type,
             status=status,
             platforms=platforms,
             post_tone=post_tone,
-            original_prompt=title,
-            research_data=research_data,
         )
     except Exception as exc:
         logger.error("Failed to create Creation %s: %s", creation_uuid, exc)
@@ -75,21 +72,34 @@ def create_generation(creation_uuid: str, generation_uuid: str, data: dict) -> N
         except Generation.DoesNotExist:
             pass
 
-    media_type = "video" if data.get("video_url") else "image"
+    # New model uses 'type' instead of 'media_type'
+    gen_type = data.get("type", "image")
+    if data.get("video_url"):
+        gen_type = "video"
+    elif data.get("img_url"):
+        gen_type = "image"
+        
     status = _STATUS_MAP.get(data.get("status", "done"), "done")
 
-    skip_keys = {"uuid", "creation_uuid", "parent_uuid", "prompt", "status", "create_at"}
-    generation_params = {k: v for k, v in data.items() if k not in skip_keys}
+    # The new model has 'content' instead of 'generation_params'
+    # We'll store the main content (URL or copy) in the content field.
+    content = data.get("content", "")
+    if not content:
+        content = data.get("img_url", "") or data.get("video_url", "") or data.get("copy", "")
+    
+    # If there's still more data, we could potentially JSON-ify it into content,
+    # but the model says it's for 'Generated content output'.
+    # For now, let's keep it simple.
 
     try:
         Generation.objects.create(
             uuid=generation_uuid,
             creation=creation,
             parent=parent,
-            media_type=media_type,
+            type=gen_type,
             prompt=data.get("prompt", ""),
             status=status,
-            generation_params=generation_params,
+            content=content,
         )
     except Exception as exc:
         logger.error("Failed to create Generation %s: %s", generation_uuid, exc)
@@ -107,10 +117,13 @@ def update_creation(creation_uuid: str, data: dict) -> None:
     if "status" in data:
         creation.status = _STATUS_MAP.get(data["status"], creation.status)
 
-    extra = {k: v for k, v in data.items() if k not in ("status", "update_at")}
-    if extra:
-        research_data = creation.research_data or {}
-        research_data.update(extra)
-        creation.research_data = research_data
+    if "title" in data:
+        creation.title = data["title"]
+        
+    if "platforms" in data:
+        platforms = data["platforms"]
+        if isinstance(platforms, list):
+            platforms = ",".join(str(p) for p in platforms)
+        creation.platforms = platforms
 
     creation.save()

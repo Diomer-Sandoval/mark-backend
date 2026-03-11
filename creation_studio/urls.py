@@ -59,6 +59,11 @@ urlpatterns = [
          views_core.GenerationDetailView.as_view(),
          name='generation-detail'),
     
+    # ============ Preview Endpoints ============
+    path('previews/', views_core.PreviewListView.as_view(), name='preview-list'),
+    path('previews/<str:uuid>/', views_core.PreviewDetailView.as_view(), name='preview-detail'),
+    path('previews/<str:preview_uuid>/items/', views_core.PreviewItemListView.as_view(), name='preview-item-list'),
+
     # ============ Post Endpoints ============
     path('posts/', views_core.PostListView.as_view(), name='post-list'),
     path('posts/<str:uuid>/', views_core.PostDetailView.as_view(), name='post-detail'),
@@ -74,12 +79,4 @@ urlpatterns = [
     path('platform-insights/<str:uuid>/', 
          views_core.PlatformInsightDetailView.as_view(), 
          name='platform-insight-detail'),
-    
-    # ============ Media File Endpoints ============
-    path('generations/<str:generation_uuid>/media/', 
-         views_core.MediaFileListView.as_view(), 
-         name='media-file-list'),
-    path('media-files/<str:uuid>/', 
-         views_core.MediaFileDetailView.as_view(), 
-         name='media-file-detail'),
 ]
