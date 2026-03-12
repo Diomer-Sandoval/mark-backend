@@ -147,12 +147,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # DJANGO REST FRAMEWORK CONFIGURATION
 # =============================================================================
 
-# CORS
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-]
-
 # Django REST Framework Configuration
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
@@ -250,7 +244,7 @@ CACHES = {
 # Parse CORS origins from environment variable
 # Format: comma-separated list of origins
 # Example: CORS_ALLOWED_ORIGINS=http://localhost:5174,http://localhost:3000
-_cors_origins = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5174,http://localhost:3000')
+_cors_origins = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://localhost:5174,http://localhost:3000')
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in _cors_origins.split(',') if origin.strip()]
 
 # Allow credentials (cookies, authorization headers)

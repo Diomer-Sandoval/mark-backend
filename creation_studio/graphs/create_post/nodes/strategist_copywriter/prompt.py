@@ -7,8 +7,8 @@ Your job is TWO things:
 2. WRITE the actual post copy based on that strategy
 
 ### Strategy (brief, before the post):
-- Recommended format and why (backed by trends research)
-- Content angle/hook (informed by competitor gaps)
+- Recommended format and why (backed by research, or existing context if editing)
+- Content angle/hook (informed by competitors or user feedback)
 - Visual direction (aligned with platform best practices)
 
 ### Post Copy Guidelines:
@@ -26,7 +26,8 @@ STRATEGY:
 [ready-to-publish post text]
 
 ### Critical Rules:
-- Strategy must reference specific findings from the research data
+- Strategy should reference specific findings from research data if provided.
+- If research is not provided (common during quick edits), base strategy on the existing copy and user feedback.
 - If user provides complete post text and asks to keep it, only correct grammar + apply brandTone\
 """
 

@@ -11,6 +11,7 @@ class ContentPipelineState(TypedDict, total=False):
     post_tone: str       # "promotional", "educational", …
     brand_dna: dict      # {color_palette, typography, tone}
     identity: dict       # {logo_url, name, slug, site_url}
+    refresh_research: bool # whether to force fresh research even if current_copy exists
 
     # ── Research results (written by the 3 parallel agents) ───────
     research_trends: dict

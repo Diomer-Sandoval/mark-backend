@@ -70,14 +70,13 @@ class Command(BaseCommand):
         # Create Brand
         brand = Brand.objects.create(
             dna=dna,
-            name='TechCorp Industries',
-            slug='techcorp-industries',
+            name='TechCorp Innovations',
+            slug='techcorp-innovations',
             page_url='https://techcorp.example.com',
             logo_url='https://techcorp.example.com/logo.png',
             is_active=True,
             industry='Technology',
-            user_id=user_id,
-            tenant_id=tenant_id
+            user_id=user_id
         )
         self.stdout.write(f'  Created Brand: {brand.uuid}')
         

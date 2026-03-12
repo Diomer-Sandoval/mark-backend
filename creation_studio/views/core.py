@@ -13,6 +13,7 @@ Data is automatically filtered to show only the current user's records.
 
 import json
 import concurrent.futures
+from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.views import APIView
@@ -131,12 +132,10 @@ class BrandListView(APIView):
     )
     def get(self, request):
         user = get_current_user(request)
-        queryset = Brand.objects.all()
+        queryset = Brand.objects.select_related('dna').all()
         
         if user and user.user_id != 'service':
             queryset = queryset.filter(user_id=user.user_id)
-            if user.tenant_id:
-                queryset = queryset.filter(tenant_id=user.tenant_id)
 
         is_active = request.query_params.get('is_active')
         if is_active is not None:
@@ -184,7 +183,7 @@ class BrandListView(APIView):
         serializer = BrandCreateSerializer(data=request.data)
         if serializer.is_valid():
             if user and user.user_id != 'service':
-                brand = serializer.save(user_id=user.user_id, tenant_id=user.tenant_id)
+                brand = serializer.save(user_id=user.user_id)
             else:
                 brand = serializer.save()
                 
@@ -447,7 +446,7 @@ class CreationListView(APIView):
     )
     def get(self, request):
         user = get_current_user(request)
-        queryset = Creation.objects.all()
+        queryset = Creation.objects.select_related('brand').annotate(generation_count=Count('generations')).all()
 
         if user and user.user_id != 'service':
             queryset = queryset.filter(brand__user_id=user.user_id)
@@ -559,7 +558,7 @@ class CreationDetailView(APIView):
 
 # ============ Generation Endpoints ============
 
-_GENERATION_VALID_TYPES = ["image", "carousel", "video"]
+_GENERATION_VALID_TYPES = ["image", "copy", "carousel", "video"]
 
 
 def _brand_context_from_creation(creation) -> tuple[dict, dict]:
@@ -641,6 +640,48 @@ def _pipeline_image(creation, body: dict):
             url=image_url,
             file_type="image/jpeg",
         )
+
+    if copy_part:
+        Generation.objects.create(
+            creation=creation,
+            type="copy",
+            prompt=body.get("prompt", ""),
+            status="done",
+            content=copy_part,
+        )
+
+    return generation, {"copy": copy_part}
+
+
+def _pipeline_copy(creation, body: dict):
+    """Run the copy pipeline and persist to ORM. Returns (Generation, extra_dict)."""
+    db_brand_dna, db_identity = _brand_context_from_creation(creation)
+    creation_platforms = [p for p in creation.platforms.split(",") if p.strip()] if creation.platforms else ["instagram"]
+    initial_state = {
+        "creation_uuid": str(creation.uuid),
+        "prompt": body.get("prompt", ""),
+        "platforms": body.get("platforms", creation_platforms),
+        "post_type": body.get("post_type", creation.post_type or "post"),
+        "post_tone": body.get("post_tone", creation.post_tone or "promotional"),
+        "brand_dna": body.get("brand_dna", db_brand_dna),
+        "identity": body.get("identity", db_identity),
+    }
+    result = _copy_agent.invoke(initial_state)
+
+    strategy_raw = result.get("strategy", "")
+    if "---" in strategy_raw:
+        _, copy_part = strategy_raw.split("---", 1)
+        copy_part = copy_part.strip()
+    else:
+        copy_part = strategy_raw
+
+    generation = Generation.objects.create(
+        creation=creation,
+        type="copy",
+        prompt=body.get("prompt", ""),
+        status="done",
+        content=copy_part,
+    )
     return generation, {"copy": copy_part}
 
 
@@ -692,12 +733,23 @@ def _pipeline_carousel(creation, body: dict):
         type="carousel",
         prompt=body.get("prompt", ""),
         status="done",
-        content=",".join([str(g.uuid) for g in slide_generations]),
+        content=",".join([str(g.uuid) for g in slide_generations])
     )
 
+    caption = result.get("caption", "")
+    if caption:
+        Generation.objects.create(
+            creation=creation,
+            type="copy",
+            prompt=body.get("prompt", ""),
+            status="done",
+            content=caption,
+        )
+
     return master_gen, {
-        "caption": result.get("caption", ""),
-        "hashtags": result.get("hashtags", []),
+        "slides": completed_slides,
+        "caption": caption,
+        "hashtags": result.get("hashtags", [])
     }
 
 
@@ -753,12 +805,23 @@ def _pipeline_video(creation, body: dict):
         type="video",
         prompt=body.get("prompt", ""),
         status="done",
-        content=",".join([str(g.uuid) for g in scene_generations]),
+        content=",".join([str(g.uuid) for g in scene_generations])
     )
 
+    caption = result.get("caption", "")
+    if caption:
+        Generation.objects.create(
+            creation=creation,
+            type="copy",
+            prompt=body.get("prompt", ""),
+            status="done",
+            content=caption,
+        )
+
     return master_gen, {
-        "caption": result.get("caption", ""),
-        "hashtags": result.get("hashtags", []),
+        "scenes": completed_scenes,
+        "caption": caption,
+        "hashtags": result.get("hashtags", [])
     }
 
 
@@ -812,6 +875,7 @@ def _pipeline_edit_copy(parent_generation, body: dict):
         "post_tone": body.get("post_tone", creation.post_tone or "promotional"),
         "brand_dna": body.get("brand_dna", {k: v for k, v in db_brand_dna.items() if k != "typography"}),
         "identity": body.get("identity", db_identity),
+        "refresh_research": body.get("refresh_research", False),
     }
 
     result = _copy_agent.invoke(initial_state)
@@ -957,7 +1021,7 @@ class GenerationListView(APIView):
         if not check_ownership(creation, user):
             return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
             
-        queryset = creation.generations.all()
+        queryset = creation.generations.select_related('creation', 'parent').all()
         serializer = GenerationListSerializer(queryset, many=True)
         return Response(serializer.data)
 
@@ -966,17 +1030,19 @@ class GenerationListView(APIView):
         summary='Create or Edit Generation',
         description=(
             "Trigger an AI generation pipeline for an existing creation.\n\n"
-            "**Create new** — omit `parent`, type is inferred from `creation.post_type`.\n"
+            "**Create new** — omit `parent`. The generation type is automatically inferred from `creation.post_type`.\n"
             "**Edit existing** — send `parent` (generation UUID) to create a new version.\n\n"
             "---\n\n"
             "### Create flows\n\n"
-            "**image** `{\"prompt\": \"...\"}` → `{generation}` (content has image URL)\n\n"
-            "**carousel** `{\"prompt\": \"...\", \"num_slides\": 7}` → `{generation}` (Master generation. Content has comma-separated slice UUIDs. Use GET /api/generations/<uuid>/ to fetch slices)\n\n"
-            "**video** `{\"prompt\": \"...\", \"num_scenes\": 4, \"scene_duration\": 6}` → `{generation}` (Master generation. Content has comma-separated scene UUIDs. Use GET /api/generations/<uuid>/ to fetch slices)\n\n"
+            "The system automatically selects the pipeline based on the creation's post type:\n"
+            "- **Post/Story/Infographic** → Image pipeline\n"
+            "- **Carousel** → Carousel pipeline\n"
+            "- **Reel/Video** → Video pipeline\n\n"
+            "For the **first generation** of a creation, the response includes the generated `copy` (caption and hashtags).\n\n"
             "---\n\n"
             "### Edit flows (send `parent`)\n\n"
             "**edit_image** `{\"parent\": \"uuid\", \"prompt\": \"Make background blue\"}` → `{generation}`\n\n"
-            "**edit_copy** `{\"parent\": \"uuid\", \"type\": \"edit_copy\", \"current_copy\": \"...\", \"copy_feedback\": \"...\"}` → `{generation}` (type=copy, content has text)\n\n"
+            "**edit_copy** `{\"parent\": \"uuid\", \"type\": \"edit_copy\", \"current_copy\": \"...\", \"copy_feedback\": \"...\"}` → `{generation}`\n\n"
             "**edit_carousel_slide** `{\"parent\": \"uuid\", \"prompt\": \"More vibrant\"}` → `{generation}`\n"
         ),
         responses={201: GenerationDetailSerializer},
@@ -1043,32 +1109,51 @@ class GenerationListView(APIView):
                 )
 
             # ── Create flow: no parent ──
+            # Infer content_type from creation.post_type (body.get("type") can still override if needed)
             content_type = body.get("type") or _POST_TYPE_TO_PIPELINE.get(creation.post_type)
 
             if not content_type:
                 return Response(
-                    {"error": f"Could not infer type from creation.post_type='{creation.post_type}'. Provide 'type' explicitly. Valid values: {_GENERATION_VALID_TYPES}"},
+                    {"error": f"Could not infer generation type from creation.post_type='{creation.post_type}'. Valid post types: {list(_POST_TYPE_TO_PIPELINE.keys())}"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+            # Check if this is the first generation for this creation
+            is_first_generation = not creation.generations.exists()
+
             if content_type == "image":
                 generation, extra = _pipeline_image(creation, body)
+                resp_data = {"generation": GenerationDetailSerializer(generation).data}
+                if is_first_generation and extra.get("copy"):
+                    resp_data["copy"] = extra["copy"]
+                return Response(resp_data, status=status.HTTP_201_CREATED)
+
+            elif content_type == "copy":
+                generation, extra = _pipeline_copy(creation, body)
                 return Response(
                     {"generation": GenerationDetailSerializer(generation).data},
                     status=status.HTTP_201_CREATED,
                 )
+
             elif content_type == "carousel":
                 master_gen, extra = _pipeline_carousel(creation, body)
-                return Response(
-                    {"generation": GenerationDetailSerializer(master_gen).data},
-                    status=status.HTTP_201_CREATED,
-                )
+                resp_data = {"generation": GenerationDetailSerializer(master_gen).data}
+                if is_first_generation:
+                    resp_data["copy"] = {
+                        "caption": extra.get("caption", ""),
+                        "hashtags": extra.get("hashtags", [])
+                    }
+                return Response(resp_data, status=status.HTTP_201_CREATED)
+
             elif content_type == "video":
                 master_gen, extra = _pipeline_video(creation, body)
-                return Response(
-                    {"generation": GenerationDetailSerializer(master_gen).data},
-                    status=status.HTTP_201_CREATED,
-                )
+                resp_data = {"generation": GenerationDetailSerializer(master_gen).data}
+                if is_first_generation:
+                    resp_data["copy"] = {
+                        "caption": extra.get("caption", ""),
+                        "hashtags": extra.get("hashtags", [])
+                    }
+                return Response(resp_data, status=status.HTTP_201_CREATED)
             else:
                 return Response(
                     {"error": f"Unknown type '{content_type}'. Valid values: {_GENERATION_VALID_TYPES}"},
@@ -1147,7 +1232,7 @@ class PreviewListView(APIView):
         responses={200: PreviewDetailSerializer(many=True)}
     )
     def get(self, request):
-        queryset = Preview.objects.all()
+        queryset = Preview.objects.prefetch_related('items__generation__creation', 'items__generation__parent').all()
         serializer = PreviewDetailSerializer(queryset, many=True)
         return Response(serializer.data)
 
@@ -1268,7 +1353,7 @@ class PostListView(APIView):
     )
     def get(self, request):
         user = get_current_user(request)
-        queryset = Post.objects.all()
+        queryset = Post.objects.select_related('brand', 'preview').all()
 
         if user and user.user_id != 'service':
             queryset = queryset.filter(user_id=user.user_id)
@@ -1455,7 +1540,7 @@ class PlatformInsightListView(APIView):
     )
     def get(self, request):
         user = get_current_user(request)
-        queryset = PlatformInsight.objects.all()
+        queryset = PlatformInsight.objects.select_related('brand').all()
 
         if user and user.user_id != 'service':
             queryset = queryset.filter(brand__user_id=user.user_id)

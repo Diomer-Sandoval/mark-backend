@@ -37,7 +37,7 @@ _ASPECT_RATIO_MAP = {
     "youtube": "16:9",
 }
 
-_VALID_TYPES = ["image", "edit_image", "edit_copy", "carousel", "edit_carousel_slide", "video"]
+_VALID_TYPES = ["image", "copy", "edit_image", "edit_copy", "carousel", "edit_carousel_slide", "video"]
 
 
 def _resolve_logo(body: dict) -> tuple[str, str]:
@@ -107,6 +107,7 @@ def _handle_image(body: dict) -> JsonResponse:
         "post_tone": body.get("post_tone", "promotional"),
         "brand_dna": brand_dna,
         "identity": identity,
+        "refresh_research": body.get("refresh_research", False),
     }
 
     try:
@@ -147,12 +148,106 @@ def _handle_image(body: dict) -> JsonResponse:
     return JsonResponse({"uuid": creation_uuid, "copy": copy_part, "image_url": image_url})
 
 
+def _handle_copy(body: dict) -> JsonResponse:
+    now = datetime.now(timezone.utc).isoformat()
+    creation_uuid = _make_uuid()
+
+    platforms = body.get("platforms", ["instagram"])
+    brand_dna = body.get("brand_dna", {})
+    identity = body.get("identity", {})
+
+    create_creation(
+        creation_uuid,
+        {
+            "uuid": creation_uuid,
+            "creation_at": now,
+            "platforms": platforms,
+            "post_type": body.get("post_type", ""),
+            "post_tone": body.get("post_tone", ""),
+            "identity": identity,
+            "status": "pending",
+            "type": "copy",
+            "update_at": now,
+        },
+    )
+
+    initial_state = {
+        "creation_uuid": creation_uuid,
+        "prompt": body.get("prompt", ""),
+        "platforms": platforms,
+        "post_type": body.get("post_type", "post"),
+        "post_tone": body.get("post_tone", "promotional"),
+        "brand_dna": brand_dna,
+        "identity": identity,
+        "refresh_research": body.get("refresh_research", False),
+    }
+
+    try:
+        result = copy_agent.invoke(initial_state)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({"error": str(e)}, status=500)
+
+    done_at = datetime.now(timezone.utc).isoformat()
+    update_creation(creation_uuid, {"status": "active", "update_at": done_at})
+
+    strategy_raw = result.get("strategy", "")
+    if "---" in strategy_raw:
+        _, copy_part = strategy_raw.split("---", 1)
+        copy_part = copy_part.strip()
+    else:
+        copy_part = strategy_raw
+
+    return JsonResponse({"uuid": creation_uuid, "copy": copy_part})
+
+
 def _handle_edit_copy(body: dict) -> JsonResponse:
     creation_uuid = body.get("creation_uuid", "")
-    platforms = body.get("platforms", ["instagram"])
-    brand_dna = {k: v for k, v in body.get("brand_dna", {}).items() if k != "typography"}
-    identity = body.get("identity", {})
     now = datetime.now(timezone.utc).isoformat()
+    
+    platforms = ["instagram"]
+    post_type = "post"
+    post_tone = "promotional"
+    brand_dna = {}
+    identity = {}
+
+    try:
+        from creation_studio.models.core import Creation
+        creation = Creation.objects.get(uuid=creation_uuid)
+        if creation.platforms:
+            platforms = [p.strip() for p in creation.platforms.split(',')]
+        if creation.post_type:
+            post_type = creation.post_type
+        if creation.post_tone:
+            post_tone = creation.post_tone
+            
+        if creation.brand:
+            identity = {
+                "name": creation.brand.name,
+                "logo_url": creation.brand.logo_url,
+                "page_url": creation.brand.page_url,
+                "industry": creation.brand.industry,
+            }
+            if creation.brand.dna:
+                dna = creation.brand.dna
+                brand_dna = {
+                    "primary_color": dna.primary_color,
+                    "secondary_color": dna.secondary_color,
+                    "accent_color": dna.accent_color,
+                    "complementary_color": dna.complementary_color,
+                    "font_body_family": dna.font_body_family,
+                    "font_headings_family": dna.font_headings_family,
+                    "voice_tone": dna.voice_tone,
+                    "archetype": dna.archetype,
+                    "target_audience": dna.target_audience,
+                    "keywords": dna.keywords,
+                    "description": dna.description,
+                }
+    except Exception:
+        pass
+
+    brand_dna = {k: v for k, v in brand_dna.items() if k != "typography"}
 
     update_creation(creation_uuid, {"status": "pending", "update_at": now})
 
@@ -162,10 +257,11 @@ def _handle_edit_copy(body: dict) -> JsonResponse:
         "current_copy": body.get("current_copy", ""),
         "copy_feedback": body.get("copy_feedback", ""),
         "platforms": platforms,
-        "post_type": body.get("post_type", "post"),
-        "post_tone": body.get("post_tone", "promotional"),
+        "post_type": post_type,
+        "post_tone": post_tone,
         "brand_dna": brand_dna,
         "identity": identity,
+        "refresh_research": body.get("refresh_research", False),
     }
 
     try:
@@ -497,6 +593,7 @@ def _handle_video(body: dict) -> JsonResponse:
 
 _HANDLERS = {
     "image": _handle_image,
+    "copy": _handle_copy,
     "edit_image": _handle_edit_image,
     "edit_copy": _handle_edit_copy,
     "carousel": _handle_carousel,
@@ -526,6 +623,7 @@ _identity_field = serializers.DictField(
         "| type | Description |\n"
         "|------|-------------|\n"
         "| `image` | Generate an AI image + marketing copy for a social post |\n"
+        "| `copy` | Generate ONLY marketing copy for a social post |\n"
         "| `edit_image` | Edit an existing generated image with a text prompt |\n"
         "| `edit_copy` | Regenerate marketing copy with optional user feedback |\n"
         "| `carousel` | Generate a multi-slide branded carousel (5–10 slides) |\n"
@@ -537,6 +635,11 @@ _identity_field = serializers.DictField(
         '{"type":"image","prompt":"...","platforms":["instagram"],"post_type":"post","post_tone":"promotional","brand_dna":{},"identity":{}}\n'
         "```\n"
         "Response: `{uuid, copy, image_url}`\n\n"
+        "### `type: copy`\n"
+        "```json\n"
+        '{"type":"copy","prompt":"...","platforms":["instagram"],"post_type":"post","post_tone":"promotional","brand_dna":{},"identity":{}}\n'
+        "```\n"
+        "Response: `{uuid, copy}`\n\n"
         "### `type: edit_image`\n"
         "```json\n"
         '{"type":"edit_image","creation_uuid":"...","uuid":"...","prompt":"make background blue","img_url":"..."}\n'
@@ -544,7 +647,7 @@ _identity_field = serializers.DictField(
         "Response: `{status, message, img_url}`\n\n"
         "### `type: edit_copy`\n"
         "```json\n"
-        '{"type":"edit_copy","creation_uuid":"...","prompt":"...","current_copy":"...","copy_feedback":"...","brand_dna":{}}\n'
+        '{"type":"edit_copy","creation_uuid":"...","prompt":"...","current_copy":"...","copy_feedback":"..."}\n'
         "```\n"
         "Response: `{uuid, copy}`\n\n"
         "### `type: carousel`\n"

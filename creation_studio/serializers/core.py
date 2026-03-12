@@ -77,7 +77,7 @@ class BrandDetailSerializer(serializers.ModelSerializer):
         model = Brand
         fields = [
             'uuid', 'name', 'slug', 'page_url', 'logo_url',
-            'is_active', 'industry', 'user_id', 'tenant_id', 'dna',
+            'is_active', 'industry', 'user_id', 'dna',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
@@ -94,7 +94,7 @@ class BrandCreateSerializer(serializers.ModelSerializer):
         model = Brand
         fields = [
             'name', 'slug', 'page_url', 'logo_url',
-            'is_active', 'industry', 'user_id', 'tenant_id', 'dna_data'
+            'is_active', 'industry', 'user_id', 'dna_data'
         ]
 
     def create(self, validated_data):
@@ -117,7 +117,7 @@ class BrandUpdateSerializer(serializers.ModelSerializer):
         model = Brand
         fields = [
             'name', 'slug', 'page_url', 'logo_url',
-            'is_active', 'industry', 'user_id', 'tenant_id'
+            'is_active', 'industry', 'user_id'
         ]
 
 
@@ -391,7 +391,7 @@ class CreationListSerializer(serializers.ModelSerializer):
         ]
 
     def get_generation_count(self, obj):
-        return obj.generations.count()
+        return getattr(obj, 'generation_count', obj.generations.count())
 
 
 class CreationDetailSerializer(serializers.ModelSerializer):
