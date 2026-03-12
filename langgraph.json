@@ -1,0 +1,13 @@
+{
+  "dependencies": [
+    "."
+  ],
+  "graphs": {
+    "content_pipeline": "creation_studio.graphs.create_post.agent:build_agent",
+    "edit_image": "creation_studio.graphs.edit_image.agent:build_edit_image_agent",
+    "carousel_pipeline": "creation_studio.graphs.create_carousel.agent:build_carousel_agent",
+    "video_pipeline": "creation_studio.graphs.create_video.agent:build_video_agent",
+    "brand_dna": "brand_dna_extractor.graphs.agent:build_brand_dna_graph"
+  },
+  "env": ".env"
+}
