@@ -791,8 +791,8 @@ def _pipeline_video(creation, body: dict):
             creation=creation,
             type="video",
             prompt=body.get("prompt", ""),
-            status="done",
-            content=scene.get("video_url", ""),
+            status="done" if scene.get("video_url") else "failed",
+            content=scene.get("video_url") or scene.get("error", "Unknown error"),
         )
         if scene.get("video_url"):
             MediaFile.objects.create(
