@@ -254,7 +254,7 @@ CORS_ALLOWED_ORIGINS = [origin.strip() for origin in _cors_origins.split(',') if
 
 # Allow credentials (cookies, authorization headers)
 CORS_ALLOW_CREDENTIALS = os.getenv('CORS_ALLOW_CREDENTIALS', 'True').lower() == 'true'
-
+CORS_ALLOW_ALL_ORIGINS = True
 # Allow all common HTTP methods
 CORS_ALLOW_METHODS = [
     'GET',
