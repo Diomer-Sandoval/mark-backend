@@ -65,8 +65,11 @@ from .content import (
 from ..graphs.create_carousel.nodes.generate_slides.slide_prompt_engineer import build_slide_prompt
 from ..graphs.create_carousel.nodes.generate_slides.slide_qc_validator import validate_slide
 from ..graphs.create_carousel.nodes.generate_slides.node import MAX_RETRIES
+from ..graphs.create_video.nodes.generate_scenes.scene_prompt_engineer import build_scene_prompt
 from ..graphs.utils.gemini_utils import generate_image_with_logo
-from ..graphs.utils.cloudinary_utils import upload_image
+from ..graphs.utils.cloudinary_utils import upload_image, upload_video
+from ..graphs.utils.veo_utils import generate_video_scene
+import uuid
 
 
 def check_ownership(obj, user):
@@ -997,7 +1000,80 @@ def _pipeline_edit_carousel_slide(parent_generation, body: dict):
     return generation, extra
 
 
-_EDIT_VALID_TYPES = ["edit_image", "edit_copy", "edit_carousel_slide"]
+def _pipeline_edit_video_scene(parent_generation, body: dict):
+    """Regenerate a single video scene. Returns (Generation, extra_dict)."""
+    creation = parent_generation.creation
+    db_brand_dna, db_identity = _brand_context_from_creation(creation)
+    
+    scene = body.get("scene", {})
+    if not scene:
+        # Rebuild scene from parent
+        scene = {
+            "scene_number": 0,
+            "scene_description": parent_generation.prompt,
+            "visual_prompt": body.get("prompt", parent_generation.prompt)
+        }
+    
+    creation_platform = creation.platforms.split(",")[0].strip() if creation.platforms else "instagram"
+    platform = body.get("platform", creation_platform)
+    aspect_ratio = _ASPECT_RATIO_MAP.get(platform.lower(), "9:16")
+    scene_duration = int(body.get("scene_duration", 6))
+    
+    brand_dna = body.get("brand_dna", db_brand_dna)
+    company = db_identity.get("name", brand_dna.get("identity", {}).get("name", ""))
+    template_context = body.get("template_context", "")
+    
+    prompt = build_scene_prompt(
+        scene=scene,
+        brand_dna=brand_dna,
+        aspect_ratio=aspect_ratio,
+        scene_duration=scene_duration,
+        company=company,
+        template_context=template_context,
+    )
+    
+    video_url = ""
+    error = ""
+    video_b64 = None
+    
+    try:
+        video_b64 = generate_video_scene(
+            prompt=prompt,
+            aspect_ratio=aspect_ratio,
+            duration=scene_duration,
+        )
+    except Exception as e:
+        error = f"Video generation error: {e}"
+        
+    if video_b64:
+        generation_uuid = str(uuid.uuid4()).replace("-", "")[:17]
+        folder = f"ia_generations/{str(creation.uuid)}/video"
+        try:
+            video_url = upload_video(video_b64, folder, generation_uuid)
+        except Exception as e:
+            error = f"Cloudinary upload failed: {e}"
+
+    generation = Generation.objects.create(
+        creation=creation,
+        parent=parent_generation,
+        type="video",
+        prompt=body.get("prompt", parent_generation.prompt),
+        status="done" if video_url else "failed",
+        content=video_url or error,
+    )
+    
+    if video_url:
+        MediaFile.objects.create(
+            generation=generation,
+            url=video_url,
+            file_type="video/mp4",
+        )
+        
+    extra = {"scene": {"video_url": video_url, "error": error}}
+    return generation, extra
+
+
+_EDIT_VALID_TYPES = ["edit_image", "edit_copy", "edit_carousel_slide", "edit_video_scene"]
 
 
 class GenerationListView(APIView):
@@ -1089,6 +1165,8 @@ class GenerationListView(APIView):
                         edit_type = "edit_copy"
                     elif creation.post_type == "carousel":
                         edit_type = "edit_carousel_slide"
+                    elif creation.post_type in ["video", "reel"]:
+                        edit_type = "edit_video_scene"
                     else:
                         edit_type = "edit_image"
 
@@ -1098,6 +1176,8 @@ class GenerationListView(APIView):
                     generation, extra = _pipeline_edit_copy(parent, body)
                 elif edit_type == "edit_carousel_slide":
                     generation, extra = _pipeline_edit_carousel_slide(parent, body)
+                elif edit_type == "edit_video_scene":
+                    generation, extra = _pipeline_edit_video_scene(parent, body)
                 else:
                     return Response(
                         {"error": f"Unknown edit type '{edit_type}'. Valid values: {_EDIT_VALID_TYPES}"},
