@@ -14,6 +14,7 @@ def preprocessing_node(state: BrandDNAState):
         "title": metadata.get("title", ""),
         "description": metadata.get("description", ""),
         "logo_url": metadata.get("logo", ""),
+        "potential_logo_urls": metadata.get("logo_candidates", []),
         "extracted_hex_colors": result.get("extracted_colors", []),
         "extracted_font_families": result.get("extracted_fonts", []),
         "raw_text_snippet": result.get("clean_text", ""),

@@ -1,11 +1,10 @@
 from django.utils.text import slugify
 
 from ...state import BrandDNAState
+from creation_studio.models import Brand, BrandDNA
 
 
 def persistence_node(state: BrandDNAState):
-    from creation_studio.models import Brand, BrandDNA
-    
     if state.get("error"):
         return state
 
@@ -31,6 +30,7 @@ def persistence_node(state: BrandDNAState):
         brand_name = llm_output.get("brand_name", "Unknown Brand")
         base_slug = slugify(brand_name)
         slug = base_slug
+        logo_url = llm_output.get("logo_url") or scraper_result.get("metadata", {}).get("logo", "")
         counter = 1
         while Brand.objects.filter(slug=slug).exists():
             slug = f"{base_slug}-{counter}"
@@ -41,10 +41,23 @@ def persistence_node(state: BrandDNAState):
             name=brand_name,
             slug=slug,
             page_url=state.get("input_url", ""),
+            logo_url=logo_url,
             primary_color=llm_output.get("primary_color", ""),
             industry=llm_output.get("industry", ""),
             user_id=state.get("user_id"),
         )
+
+        if not Brand.objects.create:
+            if brand.dna:
+                brand.dna.delete()
+            brand.dna = brand_dna
+            brand.name = brand_name
+            brand.industry = llm_output.get("industry", "")
+            if logo_url:
+                brand.logo_url = logo_url
+            if state.get("user_id"):
+                brand.user_id = state.get("user_id")
+            brand.save()
 
         return {
             "brand_id": str(brand.uuid),

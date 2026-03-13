@@ -59,55 +59,85 @@ class BrandScraperUtility:
         if desc_tag:
             description = desc_tag.get('content', '')
 
-        # Strategy 1: scored <img> tags
-        logos = []
-        for img in soup.find_all('img'):
-            src = img.get('src') or img.get('data-src')
-            if src:
-                abs_url = BrandScraperUtility.to_absolute_url(base_url, src)
-                score = BrandScraperUtility.score_logo_url(abs_url)
-                if 'logo' in (img.get('alt') or '').lower():
-                    score += 60
-                if score > 0:
-                    logos.append((score, abs_url))
-        logos.sort(reverse=True, key=lambda x: x[0])
-        best_logo = logos[0][1] if logos else ""
+        # Collect potential logos from various strategies
+        logo_candidates = []
 
-        # Strategy 2: OpenGraph image
-        if not best_logo or logos[0][0] < 50:
-            og_img_tag = soup.find('meta', property='og:image')
-            if og_img_tag and og_img_tag.get('content'):
-                og_img = BrandScraperUtility.to_absolute_url(base_url, og_img_tag.get('content'))
-                if not best_logo or BrandScraperUtility.score_logo_url(og_img) > 20:
-                    best_logo = og_img
-
-        # Strategy 3: Schema.org JSON-LD
+        # Strategy 1: Schema.org JSON-LD (Usually the most reliable)
         for script in soup.find_all('script', type='application/ld+json'):
             try:
                 data = json.loads(script.string)
                 if isinstance(data, dict):
                     data = [data]
                 for item in (data or []):
-                    if item.get('@type') in ['Organization', 'Brand', 'LocalBusiness']:
-                        schema_logo = item.get('logo')
-                        if isinstance(schema_logo, dict):
-                            schema_logo = schema_logo.get('url')
-                        if schema_logo and isinstance(schema_logo, str):
-                            best_logo = BrandScraperUtility.to_absolute_url(base_url, schema_logo)
-                            break
+                    # Check nested @graph if present (Common in WordPress/Yoast)
+                    items_to_check = [item]
+                    if '@graph' in item:
+                        items_to_check.extend(item['@graph'])
+                    
+                    for sub_item in items_to_check:
+                        if sub_item.get('@type') in ['Organization', 'Brand', 'LocalBusiness']:
+                            schema_logo = sub_item.get('logo')
+                            if isinstance(schema_logo, dict):
+                                schema_logo = schema_logo.get('url')
+                            if schema_logo and isinstance(schema_logo, str):
+                                abs_url = BrandScraperUtility.to_absolute_url(base_url, schema_logo)
+                                logo_candidates.append((100, abs_url)) # High priority
             except Exception:
                 continue
 
-        favicon = ""
+        # Strategy 2: OpenGraph image (fallback)
+        og_img_tag = soup.find('meta', property='og:image')
+        if og_img_tag and og_img_tag.get('content'):
+            og_img = BrandScraperUtility.to_absolute_url(base_url, og_img_tag.get('content'))
+            logo_candidates.append((30, og_img))
+
+        # Strategy 3: Scored <img> tags
+        for img in soup.find_all('img'):
+            src = img.get('src') or img.get('data-src') or img.get('srcset')
+            if src:
+                # Handle srcset if present
+                if ',' in src:
+                    src = src.split(',')[0].strip().split(' ')[0]
+                
+                abs_url = BrandScraperUtility.to_absolute_url(base_url, src)
+                score = BrandScraperUtility.score_logo_url(abs_url)
+                
+                # Boost if in header or has logo class/id
+                parent_attrs = str(img.parent.get('class', [])) + str(img.parent.get('id', ''))
+                if 'header' in parent_attrs.lower() or 'brand' in parent_attrs.lower():
+                    score += 20
+                
+                if 'logo' in (img.get('alt') or '').lower():
+                    score += 60
+                
+                if score > 0:
+                    logo_candidates.append((score, abs_url))
+
+        # Strategy 4: Favicon as desperate fallback
         icon_link = soup.find("link", rel=lambda x: x and 'icon' in x.lower())
         if icon_link and icon_link.get('href'):
             favicon = BrandScraperUtility.to_absolute_url(base_url, icon_link.get('href'))
+            logo_candidates.append((5, favicon))
+
+        # Sort candidates and pick best
+        logo_candidates.sort(reverse=True, key=lambda x: x[0])
+        
+        # Deduplicate while preserving order
+        seen = set()
+        clean_candidates = []
+        for score, url in logo_candidates:
+            if url not in seen and url.startswith('http'):
+                clean_candidates.append(url)
+                seen.add(url)
+
+        best_logo = clean_candidates[0] if clean_candidates else ""
 
         return {
             "title": title,
             "description": description,
             "logo": best_logo,
-            "favicon": favicon,
+            "logo_candidates": clean_candidates[:10],
+            "favicon": clean_candidates[-1] if clean_candidates else "",
         }
 
     @classmethod

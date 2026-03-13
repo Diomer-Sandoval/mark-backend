@@ -15,7 +15,7 @@ class BrandDNAOutput(BaseModel):
     target_audience: str = Field(description="Concise description of the primary target audience (who they are, what they value, what problem is solved)")
     keywords: str = Field(description="Comma-separated brand keywords")
     description: str = Field(description="Brand description and positioning statement - what makes them unique")
-
+    logo_url: str = Field(description="The most likely URL for the brand's primary logo (derived from metadata or text context)")
 
 SYSTEM_PROMPT = """You are an expert Brand DNA Architect.
 Your task is to analyze extracted raw data from a brand's website and output a structured JSON describing their Brand DNA.
@@ -28,6 +28,7 @@ You MUST:
 6. Describe the 'target_audience' based on the language and value propositions found.
 7. Provide a comma-separated list of keywords.
 8. Provide a concise brand description.
+9. Validate or provide the 'logo_url' based on the metadata provided.
 
 Output exactly valid JSON matching the schema format."""
 

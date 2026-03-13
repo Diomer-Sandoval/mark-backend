@@ -28,7 +28,10 @@ SuccessResponseSerializer = inline_serializer(
         'status': serializers.CharField(default='success'),
         'brand_id': serializers.UUIDField(),
         'db_saved': serializers.BooleanField(),
-        'brand_dna': serializers.DictField(child=serializers.CharField())
+        'brand_dna': serializers.DictField(
+            child=serializers.CharField(),
+            help_text="Dictionary containing brand_name, industry, colors, typography, voice_tone, archetype, target_audience, keywords, description, and logo_url"
+        )
     }
 )
 
