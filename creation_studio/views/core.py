@@ -1373,7 +1373,7 @@ class PostListView(APIView):
         queryset = Post.objects.select_related('brand', 'preview').all()
 
         if user and user.user_id != 'service':
-            queryset = queryset.filter(user_id=user.user_id)
+            queryset = queryset.filter(brand__user_id=user.user_id)
 
         brand_uuid = request.query_params.get('brand_uuid')
         if brand_uuid:
@@ -1420,10 +1420,7 @@ class PostListView(APIView):
             if brand and not check_ownership(brand, user):
                 return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
                 
-            if user:
-                post = serializer.save(user_id=user.user_id)
-            else:
-                post = serializer.save()
+            post = serializer.save()
                 
             return Response(PostDetailSerializer(post).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

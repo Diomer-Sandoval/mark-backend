@@ -260,7 +260,7 @@ class PostListSerializer(serializers.ModelSerializer):
         fields = [
             'uuid', 'brand_uuid', 'preview_uuid',
             'status', 'scheduled_date', 'post_type',
-            'platforms', 'created_at'
+            'created_at'
         ]
 
 
@@ -275,9 +275,9 @@ class PostDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Post
         fields = [
-            'uuid', 'brand_uuid', 'user_id', 'preview',
+            'uuid', 'brand_uuid', 'preview',
             'final_copy', 'status', 'scheduled_date', 'executed_at',
-            'post_type', 'platforms',
+            'post_type',
             'likes', 'comments', 'shares', 'reach', 'engagement_rate',
             'created_at', 'updated_at'
         ]
@@ -292,8 +292,8 @@ class PostCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Post
         fields = [
-            'brand', 'user_id', 'preview', 'final_copy', 'status',
-            'scheduled_date', 'post_type', 'platforms'
+            'brand', 'preview', 'final_copy', 'status',
+            'scheduled_date', 'post_type'
         ]
 
 
