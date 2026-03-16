@@ -2,11 +2,12 @@ import uuid as _uuid_lib
 from datetime import datetime, timezone
 
 from django.http import JsonResponse
-from rest_framework import serializers
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework import serializers, status
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse, inline_serializer
 
+from authentication import SIAJWTAuthentication, SIAAPIKeyAuthentication, get_current_user
 from ..graphs.create_post import build_agent, build_copy_agent
 from ..graphs.edit_image import build_edit_image_agent
 from ..graphs.create_carousel.agent import build_carousel_agent
@@ -21,6 +22,7 @@ from ..graphs.utils.firebase_utils import (
     create_generation,
     update_creation,
 )
+from ..models import Creation # Local model
 
 agent = build_agent()
 copy_agent = build_copy_agent()
@@ -213,7 +215,6 @@ def _handle_edit_copy(body: dict) -> JsonResponse:
     identity = {}
 
     try:
-        from creation_studio.models.core import Creation
         creation = Creation.objects.get(uuid=creation_uuid)
         if creation.platforms:
             platforms = [p.strip() for p in creation.platforms.split(',')]
@@ -673,6 +674,7 @@ _identity_field = serializers.DictField(
                 choices=_VALID_TYPES,
                 help_text="Content type to generate",
             ),
+            "brand_uuid": serializers.CharField(required=False, help_text="UUID of the brand to link to (all types)"),
             # ── image / edit_copy fields ──
             "prompt": serializers.CharField(required=False, help_text="Creative brief or edit instruction"),
             "platforms": serializers.ListField(
@@ -780,7 +782,8 @@ _identity_field = serializers.DictField(
     ],
 )
 @api_view(["POST"])
-@permission_classes([AllowAny])
+@authentication_classes([SIAJWTAuthentication, SIAAPIKeyAuthentication])
+@permission_classes([IsAuthenticated])
 def generate(request):
     try:
         body = request.data
@@ -803,42 +806,3 @@ def generate(request):
 
     return handler(body)
 
-
-# ---------------------------------------------------------------------------
-# Legacy named views — kept for any internal references; no longer routed
-# ---------------------------------------------------------------------------
-
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def generate_content(request):
-    return _handle_image(request.data)
-
-
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def regenerate_copy(request):
-    return _handle_edit_copy(request.data)
-
-
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def edit_image(request):
-    return _handle_edit_image(request.data)
-
-
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def generate_carousel(request):
-    return _handle_carousel(request.data)
-
-
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def edit_carousel_slide(request):
-    return _handle_edit_carousel_slide(request.data)
-
-
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def generate_video(request):
-    return _handle_video(request.data)

@@ -11,8 +11,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 
-from ..auth.debug import decode_token_debug, extract_user_from_token
-from ..auth.backends import SIAJWTAuthentication, SIAAPIKeyAuthentication
+from .debug import decode_token_debug, extract_user_from_token
+from .backends import SIAJWTAuthentication, SIAAPIKeyAuthentication
 
 
 class TestTokenView(APIView):
@@ -156,7 +156,7 @@ class AuthStatusView(APIView):
         }
     )
     def get(self, request):
-        from ..auth.backends import get_current_user
+        from .backends import get_current_user
 
         # Get the Authorization header
         auth_header = request.headers.get('Authorization', '')

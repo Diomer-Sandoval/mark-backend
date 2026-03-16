@@ -21,9 +21,10 @@ from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from django.db import connection
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample, OpenApiResponse
 
-from ..models import TemplateDocument, TemplateSearchService
-from ..templates.embedding import TemplateEmbeddingService
-from ..serializers import (
+from .models import TemplateDocument
+from .services.search import TemplateSearchService
+from .services.embedding import TemplateEmbeddingService
+from .serializers import (
     TemplateDocumentSerializer,
     TemplateListSerializer,
     TemplateSearchResultSerializer,
@@ -281,7 +282,7 @@ class TemplateIngestView(APIView):
 
         data = request_serializer.validated_data
 
-        from ..templates.ingest import ingest_templates
+        from .services.ingest import ingest_templates
 
         start_time = datetime.utcnow()
 

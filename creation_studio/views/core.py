@@ -22,36 +22,29 @@ from rest_framework.permissions import IsAuthenticated
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse, OpenApiExample
 
 from ..models import (
-    Brand, BrandDNA, Creation, Generation,
-    Preview, PreviewItem, Post, PlatformInsight, MediaFile
+    Creation, Generation,
+    Preview, PreviewItem
 )
-from ..auth import (
+# Models from other apps
+from brand_dna_extractor.models import Brand, BrandDNA
+from platform_insights.models import Post, PlatformInsight
+
+from authentication import (
     SIAJWTAuthentication, SIAAPIKeyAuthentication,
     get_current_user
 )
+from config.utils import check_ownership
+
 from ..serializers import (
-    # Brand
-    BrandListSerializer, BrandDetailSerializer,
-    BrandCreateSerializer, BrandUpdateSerializer,
-    # BrandDNA
-    BrandDNASerializer, BrandDNACreateSerializer,
     # Creation
     CreationListSerializer, CreationDetailSerializer,
     CreationCreateSerializer, CreationUpdateSerializer,
-# Removed CreationSearchRequestSerializer,
     # Generation
     GenerationListSerializer, GenerationDetailSerializer,
     GenerationCreateSerializer, GenerationUpdateSerializer,
     # Preview
     PreviewDetailSerializer, PreviewCreateSerializer,
     PreviewItemSerializer,
-    # Post
-    PostListSerializer, PostDetailSerializer,
-    PostCreateSerializer, PostUpdateSerializer,
-    PostMetricsUpdateSerializer,
-    # Platform Insight
-    PlatformInsightSerializer, PlatformInsightCreateSerializer,
-    PlatformInsightBulkCreateSerializer,
 )
 from .content import (
     agent as _image_agent,
@@ -70,341 +63,6 @@ from ..graphs.utils.gemini_utils import generate_image_with_logo
 from ..graphs.utils.cloudinary_utils import upload_image, upload_video
 from ..graphs.utils.veo_utils import generate_video_scene
 import uuid
-
-
-def check_ownership(obj, user):
-    """Check if user owns this object or is super admin."""
-    if not user:
-        return False
-    if user.user_id == 'service':
-        return True
-    if hasattr(obj, 'user_id') and obj.user_id == user.user_id:
-        return True
-    if hasattr(obj, 'tenant_id') and user.tenant_id and obj.tenant_id == user.tenant_id:
-        return True
-    
-    # Hierarchical checks
-    if isinstance(obj, Creation) and obj.brand:
-        return check_ownership(obj.brand, user)
-    if isinstance(obj, Generation) and obj.creation:
-        return check_ownership(obj.creation, user)
-    if isinstance(obj, PlatformInsight) and obj.brand:
-        return check_ownership(obj.brand, user)
-    
-    return False
-
-
-# ============ Brand Endpoints ============
-
-class BrandListView(APIView):
-    """List all brands or create a new brand."""
-    authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
-    permission_classes = [IsAuthenticated]
-
-    @extend_schema(
-        tags=['Brands'],
-        summary='List All Brands',
-        description='''
-        Get a list of all brands associated with the authenticated user. 
-        Data is filtered by `user_id` and `tenant_id` automatically.
-        Use query parameters to filter by active status or industry.
-        ''',
-        parameters=[
-            OpenApiParameter(name='is_active', type=bool, location=OpenApiParameter.QUERY, description='Filter by active/inactive status', required=False),
-            OpenApiParameter(name='industry', type=str, location=OpenApiParameter.QUERY, description='Search by industry name (case-insensitive)', required=False),
-        ],
-        responses={200: BrandListSerializer(many=True)},
-        examples=[
-            OpenApiExample(
-                'Brand List Response',
-                value=[
-                    {
-                        "uuid": "a1b2c3d4-e5f6-g7h8-i9j0-k1l2m3n4o5p6",
-                        "name": "Nike",
-                        "slug": "nike",
-                        "industry": "Fashion",
-                        "is_active": True,
-                        "dna_uuid": "b2c3d4e5-f6g7-h8i9-j0k1-l2m3n4o5p6q7",
-                        "logo_url": "https://nike.com/logo.png",
-                        "created_at": "2026-03-06T10:00:00Z"
-                    }
-                ],
-                response_only=True
-            )
-        ]
-    )
-    def get(self, request):
-        user = get_current_user(request)
-        queryset = Brand.objects.select_related('dna').all()
-        
-        if user and user.user_id != 'service':
-            queryset = queryset.filter(user_id=user.user_id)
-
-        is_active = request.query_params.get('is_active')
-        if is_active is not None:
-            queryset = queryset.filter(is_active=is_active.lower() == 'true')
-
-        industry = request.query_params.get('industry')
-        if industry:
-            queryset = queryset.filter(industry__icontains=industry)
-
-        serializer = BrandListSerializer(queryset, many=True)
-        return Response(serializer.data)
-
-    @extend_schema(
-        tags=['Brands'],
-        summary='Create New Brand',
-        description='''
-        Create a new brand and optionally provide BrandDNA data in the same request.
-        The brand will be automatically associated with the authenticated user.
-        If `dna_data` is provided, a new BrandDNA record will be created and linked.
-        ''',
-        request=BrandCreateSerializer,
-        responses={201: BrandDetailSerializer, 400: OpenApiResponse(description='Invalid data provided')},
-        examples=[
-            OpenApiExample(
-                'Complete Brand Creation',
-                value={
-                    "name": "Tesla",
-                    "slug": "tesla",
-                    "industry": "Automotive",
-                    "page_url": "https://tesla.com",
-                    "logo_url": "https://tesla.com/logo.png",
-                    "dna_data": {
-                        "primary_color": "#E31937",
-                        "voice_tone": "Innovative, direct, futuristic",
-                        "archetype": "The Visionary",
-                        "target_audience": "Tech enthusiasts, eco-conscious drivers"
-                    }
-                },
-                request_only=True
-            )
-        ]
-    )
-    def post(self, request):
-        user = get_current_user(request)
-        serializer = BrandCreateSerializer(data=request.data)
-        if serializer.is_valid():
-            if user and user.user_id != 'service':
-                brand = serializer.save(user_id=user.user_id)
-            else:
-                brand = serializer.save()
-                
-            return Response(
-                BrandDetailSerializer(brand).data,
-                status=status.HTTP_201_CREATED
-            )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class BrandDetailView(APIView):
-    """Retrieve, update or delete a brand."""
-    authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
-    permission_classes = [IsAuthenticated]
-
-    @extend_schema(
-        tags=['Brands'],
-        summary='Get Brand Details',
-        description='Retrieve full details for a brand, including its nested BrandDNA configuration.',
-        responses={
-            200: BrandDetailSerializer,
-            404: OpenApiResponse(description='Brand not found or access denied')
-        },
-        examples=[
-            OpenApiExample(
-                'Brand Detail Response',
-                value={
-                    "uuid": "a1b2c3d4-e5f6-g7h8-i9j0-k1l2m3n4o5p6",
-                    "name": "Tesla",
-                    "slug": "tesla",
-                    "industry": "Automotive",
-                    "dna": {
-                        "uuid": "b2c3d4e5-f6g7-h8i9-j0k1-l2m3n4o5p6q7",
-                        "primary_color": "#E31937",
-                        "voice_tone": "Innovative",
-                        "archetype": "The Visionary"
-                    },
-                    "logo_url": "https://tesla.com/logo.png",
-                    "created_at": "2026-03-06T10:00:00Z"
-                },
-                response_only=True
-            )
-        ]
-    )
-    def get(self, request, uuid):
-        user = get_current_user(request)
-        brand = get_object_or_404(Brand, uuid=uuid)
-
-        if not check_ownership(brand, user):
-            return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-
-        serializer = BrandDetailSerializer(brand)
-        return Response(serializer.data)
-
-    @extend_schema(
-        tags=['Brands'],
-        summary='Update Brand',
-        description='Update existing brand fields. Only the fields provided will be modified.',
-        request=BrandUpdateSerializer,
-        responses={200: BrandDetailSerializer, 403: OpenApiResponse(description='Permission denied')}
-    )
-    def patch(self, request, uuid):
-        user = get_current_user(request)
-        brand = get_object_or_404(Brand, uuid=uuid)
-
-        if not check_ownership(brand, user):
-            return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-
-        serializer = BrandUpdateSerializer(brand, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(BrandDetailSerializer(brand).data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    @extend_schema(
-        tags=['Brands'],
-        summary='Delete Brand',
-        description='Delete a brand and all associated data.',
-        responses={204: OpenApiResponse(description='Deleted successfully')}
-    )
-    def delete(self, request, uuid):
-        user = get_current_user(request)
-        brand = get_object_or_404(Brand, uuid=uuid)
-
-        if not check_ownership(brand, user):
-            return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-
-        brand.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-# ============ Brand DNA Endpoints ============
-
-class BrandDNAListView(APIView):
-    """List all Brand DNA records or create a new one."""
-    authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
-    permission_classes = [IsAuthenticated]
-
-    @extend_schema(
-        tags=['Brand DNA'],
-        summary='List All Brand DNA',
-        description='Get a list of all Brand DNA configurations across all brands.',
-        responses={200: BrandDNASerializer(many=True)}
-    )
-    def get(self, request):
-        queryset = BrandDNA.objects.all()
-        serializer = BrandDNASerializer(queryset, many=True)
-        return Response(serializer.data)
-
-    @extend_schema(
-        tags=['Brand DNA'],
-        summary='Create Brand DNA',
-        description='''
-        Create a standalone Brand DNA configuration. 
-        Note: It is usually better to create DNA through the Brand creation endpoint.
-        ''',
-        request=BrandDNACreateSerializer,
-        responses={201: BrandDNASerializer}
-    )
-    def post(self, request):
-        serializer = BrandDNACreateSerializer(data=request.data)
-        if serializer.is_valid():
-            dna = serializer.save()
-            return Response(BrandDNASerializer(dna).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class BrandDNADetailView(APIView):
-    """Retrieve, update or delete a Brand DNA record."""
-    authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
-    permission_classes = [IsAuthenticated]
-
-    @extend_schema(
-        tags=['Brand DNA'],
-        summary='Get Brand DNA Details',
-        responses={200: BrandDNASerializer, 404: OpenApiResponse(description='Not found')}
-    )
-    def get(self, request, uuid):
-        dna = get_object_or_404(BrandDNA, uuid=uuid)
-        serializer = BrandDNASerializer(dna)
-        return Response(serializer.data)
-
-    @extend_schema(
-        tags=['Brand DNA'],
-        summary='Update Brand DNA',
-        description='Update Brand DNA configuration. Partial updates supported.',
-        request=BrandDNACreateSerializer,
-        responses={200: BrandDNASerializer}
-    )
-    def patch(self, request, uuid):
-        dna = get_object_or_404(BrandDNA, uuid=uuid)
-        serializer = BrandDNACreateSerializer(dna, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(BrandDNASerializer(dna).data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    @extend_schema(
-        tags=['Brand DNA'],
-        summary='Delete Brand DNA',
-        responses={204: OpenApiResponse(description='Deleted successfully')}
-    )
-    def delete(self, request, uuid):
-        dna = get_object_or_404(BrandDNA, uuid=uuid)
-        dna.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-class BrandDNAByBrandView(APIView):
-    """Get or update Brand DNA for a specific brand."""
-    authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
-    permission_classes = [IsAuthenticated]
-
-    @extend_schema(
-        tags=['Brand DNA'],
-        summary='Get Brand DNA by Brand',
-        description='Retrieve the DNA configuration specifically linked to a given brand UUID.',
-        parameters=[
-            OpenApiParameter(name='brand_uuid', type=str, location=OpenApiParameter.PATH, description='UUID of the parent brand')
-        ],
-        responses={
-            200: BrandDNASerializer,
-            404: OpenApiResponse(description='Brand or DNA not found')
-        }
-    )
-    def get(self, request, brand_uuid):
-        user = get_current_user(request)
-        brand = get_object_or_404(Brand, uuid=brand_uuid)
-        if not check_ownership(brand, user):
-            return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-            
-        if not brand.dna:
-            return Response({"error": "No DNA found"}, status=status.HTTP_404_NOT_FOUND)
-            
-        serializer = BrandDNASerializer(brand.dna)
-        return Response(serializer.data)
-
-    @extend_schema(
-        tags=['Brand DNA'],
-        summary='Update Brand DNA by Brand',
-        description="Update a specific brand's DNA configuration.",
-        request=BrandDNACreateSerializer,
-        responses={200: BrandDNASerializer}
-    )
-    def patch(self, request, brand_uuid):
-        user = get_current_user(request)
-        brand = get_object_or_404(Brand, uuid=brand_uuid)
-        if not check_ownership(brand, user):
-            return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-
-        if not brand.dna:
-            return Response({"error": "No DNA found"}, status=status.HTTP_404_NOT_FOUND)
-
-        serializer = BrandDNACreateSerializer(brand.dna, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(BrandDNASerializer(brand.dna).data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 # ============ Creation Endpoints ============
@@ -637,13 +295,6 @@ def _pipeline_image(creation, body: dict):
         status="done",
         content=image_url,
     )
-    if image_url:
-        MediaFile.objects.create(
-            generation=generation,
-            url=image_url,
-            file_type="image/jpeg",
-        )
-
     if copy_part:
         Generation.objects.create(
             creation=creation,
@@ -722,12 +373,6 @@ def _pipeline_carousel(creation, body: dict):
             status="done",
             content=slide.get("image_url", ""),
         )
-        if slide.get("image_url"):
-            MediaFile.objects.create(
-                generation=gen,
-                url=slide["image_url"],
-                file_type="image/jpeg",
-            )
         slide_generations.append(gen)
 
     # Create master carousel generation
@@ -794,12 +439,6 @@ def _pipeline_video(creation, body: dict):
             status="done" if scene.get("video_url") else "failed",
             content=scene.get("video_url") or scene.get("error", "Unknown error"),
         )
-        if scene.get("video_url"):
-            MediaFile.objects.create(
-                generation=gen,
-                url=scene["video_url"],
-                file_type="video/mp4",
-            )
         scene_generations.append(gen)
 
     # Create master video generation
@@ -832,9 +471,8 @@ def _pipeline_edit_image(parent_generation, body: dict):
     """Edit an existing image generation. Returns (Generation, extra_dict)."""
     creation = parent_generation.creation
 
-    # Get the current image URL from the parent's media files
-    parent_media = parent_generation.media_files.first()
-    img_url = body.get("img_url", parent_media.url if parent_media else "")
+    # Get the current image URL or use from body
+    img_url = body.get("img_url", parent_generation.content or "")
 
     result = _edit_image_agent.invoke({
         "creation_uuid": str(creation.uuid),
@@ -853,12 +491,6 @@ def _pipeline_edit_image(parent_generation, body: dict):
         status="done",
         content=result_url,
     )
-    if result_url:
-        MediaFile.objects.create(
-            generation=generation,
-            url=result_url,
-            file_type="image/jpeg",
-        )
     return generation, {}
 
 
@@ -978,13 +610,6 @@ def _pipeline_edit_carousel_slide(parent_generation, body: dict):
         status="done",
         content=image_url,
     )
-    if image_url:
-        MediaFile.objects.create(
-            generation=generation,
-            url=image_url,
-            file_type="image/jpeg",
-        )
-
     extra = {
         "slide": {
             "index": slide_index,
@@ -1062,13 +687,6 @@ def _pipeline_edit_video_scene(parent_generation, body: dict):
         content=video_url or error,
     )
     
-    if video_url:
-        MediaFile.objects.create(
-            generation=generation,
-            url=video_url,
-            file_type="video/mp4",
-        )
-        
     extra = {"scene": {"video_url": video_url, "error": error}}
     return generation, extra
 
@@ -1408,332 +1026,3 @@ class PreviewItemListView(APIView):
             item = serializer.save(preview=preview)
             return Response(PreviewItemSerializer(item).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-# ============ Post Endpoints ============
-
-class PostListView(APIView):
-    """List all posts or create a new post."""
-    authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
-    permission_classes = [IsAuthenticated]
-
-    @extend_schema(
-        tags=['Posts'],
-        summary='List All Posts',
-        description='''
-        Retrieve a list of finalized posts.
-        Posts are the final stage of the creation workflow, containing the approved copy 
-        and scheduled publication dates.
-        ''',
-        parameters=[
-            OpenApiParameter(name='brand_uuid', type=str, location=OpenApiParameter.QUERY, description='Filter by brand', required=False),
-            OpenApiParameter(name='status', type=str, location=OpenApiParameter.QUERY, description='Filter by status (draft, scheduled, published)', required=False),
-        ],
-        responses={200: PostListSerializer(many=True)}
-    )
-    def get(self, request):
-        user = get_current_user(request)
-        queryset = Post.objects.select_related('brand', 'preview').all()
-
-        if user and user.user_id != 'service':
-            queryset = queryset.filter(user_id=user.user_id)
-
-        brand_uuid = request.query_params.get('brand_uuid')
-        if brand_uuid:
-            queryset = queryset.filter(brand__uuid=brand_uuid)
-
-        status_filter = request.query_params.get('status')
-        if status_filter:
-            queryset = queryset.filter(status=status_filter)
-
-        serializer = PostListSerializer(queryset, many=True)
-        return Response(serializer.data)
-
-    @extend_schema(
-        tags=['Posts'],
-        summary='Create New Post',
-        description='''
-        Promote a preview to a finalized Post.
-        Requires a link to a `brand` and a specific `preview` version.
-        The `final_copy` field should contain the approved marketing text.
-        ''',
-        request=PostCreateSerializer,
-        responses={201: PostDetailSerializer},
-        examples=[
-            OpenApiExample(
-                'Create Post Request',
-                value={
-                    "brand": "a1b2c3d4-e5f6-g7h8-i9j0-k1l2m3n4o5p6",
-                    "preview": "e5f6g7h8-i9j0-k1l2-m3n4-o5p6q7r8s9t0",
-                    "final_copy": "Unlock your potential with the new Nike Air Collection. #Nike #JustDoIt",
-                    "status": "scheduled",
-                    "scheduled_date": "2026-03-15T10:00:00Z",
-                    "post_type": "post",
-                    "platforms": "instagram,facebook,linkedin"
-                },
-                request_only=True
-            )
-        ]
-    )
-    def post(self, request):
-        user = get_current_user(request)
-        serializer = PostCreateSerializer(data=request.data)
-        if serializer.is_valid():
-            brand = serializer.validated_data.get('brand')
-            if brand and not check_ownership(brand, user):
-                return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-                
-            if user:
-                post = serializer.save(user_id=user.user_id)
-            else:
-                post = serializer.save()
-                
-            return Response(PostDetailSerializer(post).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class PostDetailView(APIView):
-    """Retrieve, update or delete a post."""
-    authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
-    permission_classes = [IsAuthenticated]
-
-    @extend_schema(
-        tags=['Posts'],
-        summary='Get Post Details',
-        description='Get full post details including performance metrics.',
-        responses={200: PostDetailSerializer, 404: OpenApiResponse(description='Not found')}
-    )
-    def get(self, request, uuid):
-        user = get_current_user(request)
-        post = get_object_or_404(Post, uuid=uuid)
-        if not check_ownership(post, user):
-            return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-            
-        serializer = PostDetailSerializer(post)
-        return Response(serializer.data)
-
-    @extend_schema(
-        tags=['Posts'],
-        summary='Update Post',
-        request=PostUpdateSerializer,
-        responses={200: PostDetailSerializer}
-    )
-    def patch(self, request, uuid):
-        user = get_current_user(request)
-        post = get_object_or_404(Post, uuid=uuid)
-        if not check_ownership(post, user):
-            return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-
-        serializer = PostUpdateSerializer(post, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(PostDetailSerializer(post).data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    @extend_schema(
-        tags=['Posts'],
-        summary='Delete Post',
-        responses={204: OpenApiResponse(description='Deleted successfully')}
-    )
-    def delete(self, request, uuid):
-        user = get_current_user(request)
-        post = get_object_or_404(Post, uuid=uuid)
-        if not check_ownership(post, user):
-            return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-
-        post.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-class PostMetricsView(APIView):
-    """Update post performance metrics."""
-    authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
-    permission_classes = [IsAuthenticated]
-
-    @extend_schema(
-        tags=['Posts'],
-        summary='Update Post Metrics',
-        description='Update performance metrics (likes, reach, etc.) for a published post.',
-        request=PostMetricsUpdateSerializer,
-        responses={200: PostDetailSerializer}
-    )
-    def patch(self, request, uuid):
-        user = get_current_user(request)
-        post = get_object_or_404(Post, uuid=uuid)
-        if not check_ownership(post, user):
-            return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-
-        serializer = PostMetricsUpdateSerializer(data=request.data)
-        if serializer.is_valid():
-            for field in ['likes', 'comments', 'shares', 'reach']:
-                if field in serializer.validated_data:
-                    setattr(post, field, serializer.validated_data[field])
-
-            post.engagement_rate = post.calculate_engagement_rate()
-            post.save()
-            return Response(PostDetailSerializer(post).data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-# ============ Platform Insight Endpoints ============
-
-class PlatformInsightListView(APIView):
-    """List all platform insights or create new ones."""
-    authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
-    permission_classes = [IsAuthenticated]
-
-    @extend_schema(
-        tags=['Platform Insights'],
-        summary='List Platform Insights',
-        description='''
-        Retrieve time-series performance data for a specific brand across various platforms.
-        This data includes daily snapshots of follower counts, impressions, and reach.
-        Useful for building analytics dashboards and tracking growth trends.
-        ''',
-        parameters=[
-            OpenApiParameter(name='brand_uuid', type=str, location=OpenApiParameter.QUERY, description='UUID of the brand', required=False),
-            OpenApiParameter(name='platform', type=str, location=OpenApiParameter.QUERY, description='Filter by platform (facebook, instagram, etc.)', required=False),
-            OpenApiParameter(name='date_from', type=str, location=OpenApiParameter.QUERY, description='Start date for trend data (YYYY-MM-DD)', required=False),
-            OpenApiParameter(name='date_to', type=str, location=OpenApiParameter.QUERY, description='End date for trend data (YYYY-MM-DD)', required=False),
-        ],
-        responses={200: PlatformInsightSerializer(many=True)},
-        examples=[
-            OpenApiExample(
-                'Insight Trend Response',
-                value=[
-                    {
-                        "uuid": "u1v2w3x4-y5z6-a7b8-c9d0-e1f2g3h4i5j6",
-                        "brand_uuid": "a1b2c3d4-e5f6-g7h8-i9j0-k1l2m3n4o5p6",
-                        "brand_name": "Nike",
-                        "platform": "instagram",
-                        "date": "2026-03-10",
-                        "followers": 150200,
-                        "impressions": 12000,
-                        "reach": 8500,
-                        "engagement_rate": 3.2,
-                        "created_at": "2026-03-11T00:00:00Z"
-                    }
-                ],
-                response_only=True
-            )
-        ]
-    )
-    def get(self, request):
-        user = get_current_user(request)
-        queryset = PlatformInsight.objects.select_related('brand').all()
-
-        if user and user.user_id != 'service':
-            queryset = queryset.filter(brand__user_id=user.user_id)
-
-        brand_uuid = request.query_params.get('brand_uuid')
-        if brand_uuid:
-            queryset = queryset.filter(brand__uuid=brand_uuid)
-
-        platform = request.query_params.get('platform')
-        if platform:
-            queryset = queryset.filter(platform=platform)
-
-        date_from = request.query_params.get('date_from')
-        if date_from:
-            queryset = queryset.filter(date__gte=date_from)
-
-        date_to = request.query_params.get('date_to')
-        if date_to:
-            queryset = queryset.filter(date__lte=date_to)
-
-        serializer = PlatformInsightSerializer(queryset, many=True)
-        return Response(serializer.data)
-
-    @extend_schema(
-        tags=['Platform Insights'],
-        summary='Create Platform Insight',
-        description='Record a single daily snapshot of metrics for a brand on a specific platform.',
-        request=PlatformInsightCreateSerializer,
-        responses={201: PlatformInsightSerializer},
-        examples=[
-            OpenApiExample(
-                'Create Insight Request',
-                value={
-                    "brand": "a1b2c3d4-e5f6-g7h8-i9j0-k1l2m3n4o5p6",
-                    "platform": "facebook",
-                    "date": "2026-03-10",
-                    "followers": 85400,
-                    "impressions": 5000,
-                    "reach": 4200,
-                    "engagement_rate": 2.1
-                },
-                request_only=True
-            )
-        ]
-    )
-    def post(self, request):
-        user = get_current_user(request)
-        serializer = PlatformInsightCreateSerializer(data=request.data)
-        if serializer.is_valid():
-            brand = serializer.validated_data.get('brand')
-            if brand and not check_ownership(brand, user):
-                return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-                
-            insight = serializer.save()
-            return Response(PlatformInsightSerializer(insight).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class PlatformInsightBulkCreateView(APIView):
-    """Bulk create platform insights."""
-    authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
-    permission_classes = [IsAuthenticated]
-
-    @extend_schema(
-        tags=['Platform Insights'],
-        summary='Bulk Create Insights',
-        description='''
-        Efficiently upload multiple metric snapshots in a single request. 
-        Highly recommended for syncing historical data or daily updates for multiple dates/platforms.
-        ''',
-        request=PlatformInsightBulkCreateSerializer,
-        responses={201: PlatformInsightSerializer(many=True)}
-    )
-    def post(self, request):
-        serializer = PlatformInsightBulkCreateSerializer(data=request.data)
-        if serializer.is_valid():
-            result = serializer.save()
-            return Response(
-                PlatformInsightSerializer(result['insights'], many=True).data,
-                status=status.HTTP_201_CREATED
-            )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class PlatformInsightDetailView(APIView):
-    """Retrieve or delete a platform insight."""
-    authentication_classes = [SIAJWTAuthentication, SIAAPIKeyAuthentication]
-    permission_classes = [IsAuthenticated]
-
-    @extend_schema(
-        tags=['Platform Insights'],
-        summary='Get Platform Insight Details',
-        responses={200: PlatformInsightSerializer, 404: OpenApiResponse(description='Not found')}
-    )
-    def get(self, request, uuid):
-        user = get_current_user(request)
-        insight = get_object_or_404(PlatformInsight, uuid=uuid)
-        if not check_ownership(insight.brand, user):
-            return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-            
-        serializer = PlatformInsightSerializer(insight)
-        return Response(serializer.data)
-
-    @extend_schema(
-        tags=['Platform Insights'],
-        summary='Delete Platform Insight',
-        responses={204: OpenApiResponse(description='Deleted successfully')}
-    )
-    def delete(self, request, uuid):
-        user = get_current_user(request)
-        insight = get_object_or_404(PlatformInsight, uuid=uuid)
-        if not check_ownership(insight.brand, user):
-            return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-
-        insight.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
