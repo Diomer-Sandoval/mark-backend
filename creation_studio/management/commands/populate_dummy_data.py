@@ -8,9 +8,11 @@ Usage:
 
 from django.core.management.base import BaseCommand
 from creation_studio.models import (
-    Brand, BrandDNA, Creation, Generation,
-    Preview, PreviewItem, Post, PlatformInsight
+    Creation, Generation,
+    Preview, PreviewItem
 )
+from brand_dna_extractor.models import Brand, BrandDNA
+from platform_insights.models import Post, PlatformInsight
 
 
 class Command(BaseCommand):
@@ -76,7 +78,8 @@ class Command(BaseCommand):
             logo_url='https://techcorp.example.com/logo.png',
             is_active=True,
             industry='Technology',
-            user_id=user_id
+            user_id=user_id,
+            tenant_id=tenant_id
         )
         self.stdout.write(f'  Created Brand: {brand.uuid}')
         
@@ -142,7 +145,6 @@ class Command(BaseCommand):
         # Create Posts
         post1 = Post.objects.create(
             brand=brand,
-            user_id=user_id,
             preview=preview,
             final_copy='Introducing our Summer Collection! 🌞✨\n\n#SummerVibes #NewCollection #TechCorp',
             status='published',

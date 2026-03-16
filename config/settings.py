@@ -43,6 +43,8 @@ ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split('
 
 INSTALLED_APPS = [
     'corsheaders',
+    'authentication',
+    'content_templates',
     'creation_studio',
     'brand_dna_extractor',
     'platform_insights',
@@ -154,9 +156,9 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'creation_studio.auth.SIAJWTAuthentication',
-        'creation_studio.auth.SIAAPIKeyAuthentication',
-        'creation_studio.auth.SIASessionAuthentication',
+        'authentication.backends.SIAJWTAuthentication',
+        'authentication.backends.SIAAPIKeyAuthentication',
+        'authentication.backends.SIASessionAuthentication',
     ],
 }
 
@@ -281,8 +283,8 @@ CORS_ALLOW_HEADERS = [
 SPECTACULAR_SETTINGS = {
     # Custom authentication extensions
     'AUTHENTICATION_EXTENSIONS': [
-        'creation_studio.auth.SIAJWTAuthenticationExtension',
-        'creation_studio.auth.SIAAPIKeyAuthenticationExtension',
+        'authentication.schema.SIAJWTAuthenticationExtension',
+        'authentication.schema.SIAAPIKeyAuthenticationExtension',
     ],
     'TITLE': 'Mark Backend - Marketing Agent API',
     'DESCRIPTION': '''
@@ -334,7 +336,6 @@ SPECTACULAR_SETTINGS = {
         {'name': 'Generations', 'description': 'AI-generated visual assets'},
         {'name': 'Posts', 'description': 'Social media posts and performance metrics'},
         {'name': 'Platform Insights', 'description': 'Time-series analytics for brand growth'},
-        {'name': 'Media Files', 'description': 'Digital asset management'},
     ],
     'EXAMPLES_COMPONENT_SPLIT_REQUEST': True,
     'SORT_OPERATION_PARAMETERS': True,
