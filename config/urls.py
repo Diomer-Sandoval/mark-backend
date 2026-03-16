@@ -27,9 +27,11 @@ urlpatterns = [
     path('admin/', admin.site.urls),
 
     # API Endpoints
+    path('api/auth/', include('authentication.urls')),
+    path('api/templates/', include('content_templates.urls')),
     path('api/', include('creation_studio.urls')),
     path('api/', include('brand_dna_extractor.urls')),
-    path('api/insights/', include('platform_insights.urls')),
+    path('api/', include('platform_insights.urls')),
     
 
     # Swagger/OpenAPI Documentation
