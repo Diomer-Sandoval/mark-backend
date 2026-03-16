@@ -4,7 +4,7 @@ from ...state import BrandDNAState
 
 
 def persistence_node(state: BrandDNAState):
-    from creation_studio.models import Brand, BrandDNA
+    from brand_dna_extractor.models import Brand, BrandDNA
     
     if state.get("error"):
         return state
