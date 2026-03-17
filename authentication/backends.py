@@ -339,6 +339,16 @@ def get_current_user(request):
     user = getattr(request, 'user', None)
     if user and hasattr(user, 'is_authenticated') and user.is_authenticated:
         return user
+        
+    # Support development mode without authentication
+    if getattr(settings, 'DEV_MODE_ALLOW_UNAUTHENTICATED', False):
+        return SIAUser(
+            user_id='service',
+            email='dev@example.com',
+            role='super_admin',
+            agent_access=['mark']
+        )
+        
     return None
 
 
