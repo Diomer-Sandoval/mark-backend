@@ -211,7 +211,7 @@ def build_mark_agent():
         },
     )
 
-    return graph.compile()
+    return graph.compile(checkpointer=None)
 
 
 # Singleton instance
@@ -224,6 +224,12 @@ def get_mark_agent():
     if _mark_agent is None:
         _mark_agent = build_mark_agent()
     return _mark_agent
+
+
+def reset_mark_agent():
+    """Force rebuild the agent (call after code changes)."""
+    global _mark_agent
+    _mark_agent = None
 
 
 def extract_final_response(state: MARKAgentState) -> MARKAgentState:
@@ -296,7 +302,7 @@ def process_message_sync(
     agent = get_mark_agent()
 
     try:
-        result = agent.invoke(state)
+        result = agent.invoke(state, config={"recursion_limit": 10})
         result = extract_final_response(result)
 
         return {
@@ -348,16 +354,17 @@ def process_message_stream(
     agent_sequence = []
 
     try:
-        for chunk, metadata in agent.stream(state, stream_mode="messages"):
+        for chunk, metadata in agent.stream(state, stream_mode="messages", config={"recursion_limit": 10}):
             node = metadata.get("langgraph_node", "")
             if node and node not in ("tools", "router", "pipeline_router"):
                 final_agent = node
                 if not agent_sequence or agent_sequence[-1] != node:
                     agent_sequence.append(node)
 
-            # Only yield text tokens from AI message chunks — skip tool-call blocks
+            # Only yield text tokens from actual agent nodes — skip router/pipeline JSON
             if (
-                isinstance(chunk, AIMessageChunk)
+                node not in ("router", "pipeline_router")
+                and isinstance(chunk, (AIMessage, AIMessageChunk))
                 and isinstance(chunk.content, str)
                 and chunk.content
             ):

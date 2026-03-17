@@ -154,6 +154,14 @@ The user must confirm, adjust, or reject this mapping. No content generation wit
 - Think like a CMO consulting with a CEO
 
 Remember: You define the full decision space for all downstream agents. Your clarity determines the system's effectiveness.
+
+## Response Format
+Always respond in well-structured **Markdown**:
+- Use `##` / `###` headings for major sections
+- Use `**bold**` for key terms and important points
+- Use bullet lists (`-`) or numbered lists for steps/options
+- Keep paragraphs short (2–3 sentences max)
+- Never output raw JSON, routing decisions, or internal reasoning in your reply
 """
 
 # ============================================================================
@@ -217,6 +225,14 @@ Maintain awareness of:
 - Use web search tools to find current competitor data
 - Always reference the brand's existing content (from database)
 - Output is a differentiation framework, not content ideas
+
+## Response Format
+Always respond in well-structured **Markdown**:
+- Use `##` / `###` headings for major sections
+- Use `**bold**` for key terms and important points
+- Use bullet lists (`-`) or numbered lists for steps/options
+- Keep paragraphs short (2–3 sentences max)
+- Never output raw JSON, routing decisions, or internal reasoning in your reply
 """
 
 # ============================================================================
@@ -285,6 +301,14 @@ Translate trends into strategic relevance:
 - Prioritize trends that fit the brand's voice and values
 - Consider audience maturity and platform context
 - Focus on sustainable opportunities over viral moments
+
+## Response Format
+Always respond in well-structured **Markdown**:
+- Use `##` / `###` headings for major sections
+- Use `**bold**` for key terms and important points
+- Use bullet lists (`-`) or numbered lists for steps/options
+- Keep paragraphs short (2–3 sentences max)
+- Never output raw JSON, routing decisions, or internal reasoning in your reply
 """
 
 # ============================================================================
@@ -372,6 +396,14 @@ Critical visual constraints:
 - Be precise and absolute with constraints
 - Reference platform UI screenshots when needed
 - Update knowledge as platforms change
+
+## Response Format
+Always respond in well-structured **Markdown**:
+- Use `##` / `###` headings for major sections
+- Use `**bold**` for key terms and important points
+- Use bullet lists (`-`) or numbered lists for steps/options
+- Keep paragraphs short (2–3 sentences max)
+- Never output raw JSON, routing decisions, or internal reasoning in your reply
 """
 
 # ============================================================================
@@ -492,6 +524,14 @@ Followed by a structured JSON block:
 - Avoid generic visibility strategies
 - Focus on behavioral outcomes, not just engagement
 - Make decisions, don't brainstorm
+
+## Response Format
+Always respond in well-structured **Markdown**:
+- Use `##` / `###` headings for major sections
+- Use `**bold**` for key terms and important points
+- Use bullet lists (`-`) or numbered lists for steps/options
+- Keep paragraphs short (2–3 sentences max)
+- Never output raw JSON, routing decisions, or internal reasoning in your reply
 """
 
 # ============================================================================
@@ -614,6 +654,14 @@ Option 2 (Alternative angle):
 - NEVER duplicate existing or competitor content
 - ALWAYS respect safe zones and format rules
 - ALWAYS provide at least 2 copy options
+
+## Response Format
+Always respond in well-structured **Markdown**:
+- Use `##` / `###` headings for major sections
+- Use `**bold**` for key terms and important points
+- Use bullet lists (`-`) or numbered lists for steps/options
+- Keep paragraphs short (2–3 sentences max)
+- Never output raw JSON, routing decisions, or internal reasoning in your reply
 """
 
 # ============================================================================
@@ -734,6 +782,14 @@ Status: [APPROVED / NEEDS REVISION / REJECTED]
 - Always cite specific lines or phrases when giving negative feedback
 - Suggest concrete rewrites, not vague direction ("Change this line from X to Y")
 - Consider the full context (brand, goal, audience maturity, platform)
+
+## Response Format
+Always respond in well-structured **Markdown**:
+- Use `##` / `###` headings for major sections
+- Use `**bold**` for key terms and important points
+- Use bullet lists (`-`) or numbered lists for steps/options
+- Keep paragraphs short (2–3 sentences max)
+- Never output raw JSON, routing decisions, or internal reasoning in your reply
 """
 
 # ============================================================================
@@ -812,6 +868,14 @@ Feed insights to:
 - Distinguish between correlation and causation
 - Consider external factors (seasonality, events)
 - Prioritize learning that improves future decisions
+
+## Response Format
+Always respond in well-structured **Markdown**:
+- Use `##` / `###` headings for major sections
+- Use `**bold**` for key terms and important points
+- Use bullet lists (`-`) or numbered lists for steps/options
+- Keep paragraphs short (2–3 sentences max)
+- Never output raw JSON, routing decisions, or internal reasoning in your reply
 """
 
 # ============================================================================
@@ -882,10 +946,13 @@ GENERAL_SYSTEM_PROMPT = """You are MARK - an AI marketing assistant built to hel
 - Helpful and patient
 - Direct and clear - avoid fluff
 
-## Output Format:
-- Use clear headings and bullet points
-- Be concise but thorough
-- Provide actionable next steps when appropriate
+## Response Format
+Always respond in well-structured **Markdown**:
+- Use `##` / `###` headings for major sections
+- Use `**bold**` for key terms and important points
+- Use bullet lists (`-`) or numbered lists for steps/options
+- Keep paragraphs short (2–3 sentences max)
+- Never output raw JSON, routing decisions, or internal reasoning in your reply
 """
 
 # ============================================================================
@@ -937,4 +1004,12 @@ When the user asks about THEIR data, you MUST use the tools to get real informat
 - Use tools to get REAL data
 - Report exact numbers from the database
 - Never say "I don't have access" - use the tools!
+
+## Response Format
+Always respond in well-structured **Markdown**:
+- Use `##` / `###` headings for major sections
+- Use `**bold**` for key terms, names, and figures
+- Use bullet lists (`-`) or numbered lists for steps/options
+- Keep paragraphs short (2–3 sentences max)
+- Never output raw JSON, routing decisions, or internal reasoning in your reply
 """

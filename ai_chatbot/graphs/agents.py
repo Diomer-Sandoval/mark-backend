@@ -176,30 +176,13 @@ Respond with ONLY a single JSON object, no markdown, no explanation:
         else:
             agent_name = "general"
 
-    # ── Pipeline mode detection ───────────────────────────────────────────────
-    # For high-intent content/strategy requests, chain multiple agents automatically.
-    PIPELINE_INTENTS = {
-        "content": ["trends", "platform", "strategy", "content", "review"],
-        "strategy": ["trends", "market_analysis", "strategy"],
-    }
-    msg_lower_check = last_message.content.lower() if isinstance(last_message, HumanMessage) else ""
-    # Only activate pipeline for clear multi-step requests (longer, specific queries)
-    is_deep_request = len(msg_lower_check.split()) > 8 and any(
-        k in msg_lower_check for k in ["create a post", "write a post", "create content", "marketing strategy", "content strategy", "campaign"]
-    )
-    if agent_name in PIPELINE_INTENTS and is_deep_request:
-        steps = PIPELINE_INTENTS[agent_name]
-        state["pipeline_mode"] = True
-        state["pipeline_steps"] = steps
-        state["pipeline_current_index"] = 0
-        state["current_agent"] = steps[0]
-        state["agent_sequence"] = state.get("agent_sequence", []) + ["router"] + steps
-    else:
-        state["pipeline_mode"] = False
-        state["pipeline_steps"] = []
-        state["pipeline_current_index"] = 0
-        state["current_agent"] = agent_name
-        state["agent_sequence"] = state.get("agent_sequence", []) + ["router", agent_name]
+    # Route to a single agent — pipeline mode disabled for SSE chat
+    # (chaining 5+ agents causes 30-60s latency and connection resets)
+    state["pipeline_mode"] = False
+    state["pipeline_steps"] = []
+    state["pipeline_current_index"] = 0
+    state["current_agent"] = agent_name
+    state["agent_sequence"] = state.get("agent_sequence", []) + ["router", agent_name]
 
     return state
 
@@ -395,6 +378,11 @@ Research competitors and provide a differentiation framework. Identify:
     llm = get_llm(tools=tools)
     response = llm.invoke([SystemMessage(content=prompt)])
     
+    # If LLM chose to call a tool, preserve tool_calls for should_continue routing
+    if hasattr(response, 'tool_calls') and response.tool_calls:
+        state["messages"] = messages + [response]
+        return state
+    
     state["market_analysis_output"] = {"response": response.content}
     state["final_response"] = response.content
     state["messages"] = messages + [AIMessage(content=response.content, name="market_analysis")]
@@ -441,6 +429,11 @@ Focus on trends relevant to the industry and brand positioning.
     
     llm = get_llm(tools=tools)
     response = llm.invoke([SystemMessage(content=prompt)])
+    
+    # If LLM chose to call a tool, preserve tool_calls for should_continue routing
+    if hasattr(response, 'tool_calls') and response.tool_calls:
+        state["messages"] = messages + [response]
+        return state
     
     state["trends_output"] = {"response": response.content}
     state["final_response"] = response.content
@@ -580,6 +573,11 @@ Brand ID for reference: {brand_id or 'Not specified'}
     
     llm = get_llm(tools=tools if tools else None)
     response = llm.invoke([SystemMessage(content=prompt)])
+    
+    # If LLM chose to call a tool, preserve tool_calls for should_continue routing
+    if hasattr(response, 'tool_calls') and response.tool_calls:
+        state["messages"] = messages + [response]
+        return state
     
     state["content_output"] = {"response": response.content}
     state["final_response"] = response.content

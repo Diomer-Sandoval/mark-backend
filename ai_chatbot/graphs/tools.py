@@ -291,7 +291,7 @@ class GetBrandInfoTool(BaseTool):
                 }
             
             brand_data = {
-                "uuid": brand.uuid,
+                "uuid": str(brand.uuid),
                 "name": brand.name,
                 "industry": brand.industry,
                 "page_url": brand.page_url,
@@ -335,7 +335,7 @@ class GetUserBrandsTool(BaseTool):
             brand_list = []
             for brand in brands:
                 brand_list.append({
-                    "uuid": brand.uuid,
+                    "uuid": str(brand.uuid),
                     "name": brand.name,
                     "industry": brand.industry,
                     "created_at": str(brand.created_at),
@@ -385,7 +385,7 @@ class GetCreationsTool(BaseTool):
             creations = []
             for c in queryset:
                 creations.append({
-                    "uuid": c.uuid,
+                    "uuid": str(c.uuid),
                     "title": c.title,
                     "post_type": c.post_type,
                     "status": c.status,
@@ -443,7 +443,7 @@ class GetPostsTool(BaseTool):
             for p in queryset:
                 copy_preview = p.final_copy[:150] + "..." if p.final_copy and len(p.final_copy) > 150 else (p.final_copy or "")
                 posts.append({
-                    "uuid": p.uuid,
+                    "uuid": str(p.uuid),
                     "copy": copy_preview,
                     "status": p.status,
                     "post_type": p.post_type,
@@ -639,7 +639,7 @@ class GetBestPerformingContentTool(BaseTool):
             for p in posts:
                 copy_preview = p.final_copy[:150] + "..." if p.final_copy and len(p.final_copy) > 150 else (p.final_copy or "")
                 results.append({
-                    "uuid": p.uuid,
+                    "uuid": str(p.uuid),
                     "copy_preview": copy_preview,
                     "post_type": p.post_type,
                     "likes": p.likes,
