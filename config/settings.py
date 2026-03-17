@@ -173,7 +173,7 @@ DEV_MODE_ALLOW_UNAUTHENTICATED = os.getenv('DEV_MODE_ALLOW_UNAUTHENTICATED', 'Fa
 
 if DEV_MODE_ALLOW_UNAUTHENTICATED:
     REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES'] = ['rest_framework.permissions.AllowAny']
-    REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'] = []
+    REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'] = ['authentication.backends.AllowUnauthenticated']
 
 
 # =============================================================================
@@ -254,7 +254,8 @@ CACHES = {
 # Example: CORS_ALLOWED_ORIGINS=http://localhost:5174,http://localhost:3000
 _cors_origins = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://localhost:5174,http://localhost:3000')
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in _cors_origins.split(',') if origin.strip()]
-
+#allow all origins
+CORS_ALLOW_ALL_ORIGINS = True
 # Allow credentials (cookies, authorization headers)
 CORS_ALLOW_CREDENTIALS = os.getenv('CORS_ALLOW_CREDENTIALS', 'True').lower() == 'true'
 

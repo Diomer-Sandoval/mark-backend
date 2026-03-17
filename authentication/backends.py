@@ -284,13 +284,17 @@ class SIAAPIKeyAuthentication(authentication.BaseAuthentication):
 
 class AllowUnauthenticated(authentication.BaseAuthentication):
     """
-    Allow unauthenticated requests.
-
-    Returns an anonymous user that allows the request to proceed.
-    Use this for public endpoints.
+    Allow unauthenticated requests by returning a mock SIAUser in DEV_MODE.
     """
 
     def authenticate(self, request):
+        if getattr(settings, 'DEV_MODE_ALLOW_UNAUTHENTICATED', False):
+            return (SIAUser(
+                user_id='service',
+                email='dev@example.com',
+                role='super_admin',
+                agent_access=['mark']
+            ), None)
         return None
 
 
