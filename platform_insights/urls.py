@@ -7,7 +7,7 @@ from .views import (
 
 urlpatterns = [
     # Meta Sync
-    path('insights/sync/', SyncInsightsView.as_view(), name='sync-insights'),
+    path('sync/', SyncInsightsView.as_view(), name='sync-insights'),
     
     # Posts
     path('posts/', PostListView.as_view(), name='post-list'),
