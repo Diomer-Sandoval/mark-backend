@@ -18,26 +18,26 @@ urlpatterns = [
          name='chat-message-list'),
     
     # Interactions
-    path('chat/send/', 
+    path('send/', 
          views.ChatSendMessageView.as_view(), 
          name='chat-send'),
-    path('chat/suggestions/', 
+    path('suggestions/', 
          views.ChatSuggestionsView.as_view(), 
          name='chat-suggestions'),
-    path('chat/memories/', 
+    path('memories/', 
          views.ChatMemoryListView.as_view(), 
          name='chat-memory-list'),
-    path('chat/actions/<str:action>/',
+    path('actions/<str:action>/',
          views.ChatQuickActionView.as_view(),
          name='chat-quick-action'),
 
     # Streaming (SSE)
-    path('chat/conversations/<str:conversation_uuid>/stream/',
+    path('conversations/<str:conversation_uuid>/stream/',
          views.ChatStreamMessageView.as_view(),
          name='chat-stream'),
 
     # Direct image generation
-    path('chat/generate-image/',
+    path('generate-image/',
          views.ChatGenerateImageView.as_view(),
          name='chat-generate-image'),
 
