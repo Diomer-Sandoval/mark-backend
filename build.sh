@@ -22,6 +22,8 @@ with connection.cursor() as cursor:
     cursor.execute('DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
 "
 
+poetry run python manage.py createcachetable
+
 # Ejecutar migraciones desde cero
 echo "Ejecutando todas las migraciones..."
 poetry run python manage.py migrate
